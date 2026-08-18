@@ -1,0 +1,30 @@
+use cv_db;
+
+select * from payments;
+select * from payment_types;
+select * from document_types;
+
+alter table payments add commercial_code varchar(50);
+alter table payments add commercial_name varchar(100);
+alter table payments add operation_date varchar(30);
+alter table payments add deposit_date varchar(30);
+alter table payments add product varchar(30);
+alter table payments add operation_type varchar(30);
+alter table payments add card_number varchar(30);
+alter table payments add card_type varchar(30);
+alter table payments add operation_amount varchar(30);
+alter table payments add is_dcc varchar(30);
+alter table payments add dcc_amount varchar(30);
+alter table payments add total_commision varchar(30);
+alter table payments add niubiz_comision varchar(30);
+alter table payments add igv_comision varchar(30);
+alter table payments add deposited_amount varchar(30);
+alter table payments add operation_id varchar(30);
+alter table payments add target_account varchar(30);
+alter table payments add bank_name varchar(30);
+alter table payments add terminal_serial varchar(30);
+alter table payments add authorization_code varchar(30);
+alter table payments add references_number varchar(40);
+alter table payments add voucher_number varchar(40);
+alter table payments add proccesed_date datetime;
+alter table payments add file_id int;

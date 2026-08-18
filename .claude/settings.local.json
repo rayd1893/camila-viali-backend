@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/i0310/Downloads/app/**)",
+      "Read(//c/Users/i0310/Downloads/**)"
+    ]
+  }
+}
