@@ -1,0 +1,37 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+build/
+dist/
+
+# --- Entornos virtuales ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Variables de entorno / secretos ---
+.env
+.env.*
+!.env.example
+
+# --- Reportes y exportaciones generadas (contienen datos reales de clientes/operaciones) ---
+*.xlsx
+*.xls
+*.csv
+reporte_asiento_cancelacion.txt
+
+# --- Frontend (Angular, cuando se inicie) ---
+node_modules/
+.angular/
+/dist/
+
+# --- Editor / sistema operativo ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -22,6 +22,13 @@ class RequestPaymentMatch(BaseModel):
     date_from: date
     date_to: date
 
+class RequestCancellationBook(BaseModel):
+    date_from: date
+    date_to: date
+
+class CancelCancellationBook(BaseModel):
+    ids: list[int]
+
 class Clients(BaseModel):
     id: int
     first_name: Optional[str] = None
@@ -117,8 +124,9 @@ class Payments(BaseModel):
     isCreditPayment: bool
     createdAt: datetime
     inactive: bool
-    id_document: int
+    id_document: Optional[int]
     id_payment_type: int
+    id_return: Optional[int]
 
 class OperacionesNiubiz(BaseModel):
     id_operacion:               int

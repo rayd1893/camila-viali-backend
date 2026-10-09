@@ -28,7 +28,7 @@ from models.payment_type import PaymentType
 from models.payment import Payment
 from models.niubiz import OperacionNiubiz
 from models.payment_source_match import PaymentSourceMatch
-from schemas.bill import Clients, Coins, DocumentTypes, Documents, Returns, RequestDocument, RequestExchange, RequestReport, RequestPayment, Exchanges, Approvals, Centers, Subcenters, Payments, PaymentTypes, OperacionesNiubiz, RequestPaymentMatch
+from schemas.bill import Clients, Coins, DocumentTypes, Documents, Returns, RequestDocument, RequestExchange, RequestReport, RequestPayment, Exchanges, Approvals, Centers, Subcenters, Payments, PaymentTypes, OperacionesNiubiz, RequestPaymentMatch, RequestCancellationBook, CancelCancellationBook
 from typing import List
 
 load_dotenv()
@@ -341,7 +341,7 @@ def parse_niubiz_fecha(raw: str) -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.strptime(raw.strip(), "%d-%m-%Y %H:%M")
+        return datetime.strptime(raw.strip(), "%d-%m-%Y %H:%M:%S")
     except ValueError:
         log.warning("Fecha Niubiz no parseable: %r", raw)
         return None
@@ -757,6 +757,114 @@ async def upload_niubiz(file: UploadFile = File(...), db: Session = Depends(get_
     }
  
 
+CANCELLATION_BOOK_FILENAME = "Asiento_contable_cancelacion.xlsx"
+
+@router.get("/cancellation_book")
+def generate_cancellation_book(
+    request: RequestCancellationBook,
+    db: Session = Depends(get_db),
+):
+    """
+    Genera el asiento contable de cancelación: cruce payments vs operaciones
+    Niubiz (payment_source_match) aún no confirmados, filtrado por
+    payments.recordDate en [date_from, date_to].
+
+    Este endpoint NO marca nada. Devuelve el Excel para revisión manual y
+    la lista de ids de payment_source_match incluidos, que luego deben
+    enviarse a POST /bills/cancellation_book/confirm para marcarlos.
+    """
+    rows = db.execute(
+        text("""
+            SELECT
+                psm.id                     AS id_match,
+                p.id                       AS id_payment,
+                p.recordDate,
+                p.amount                   AS payment_amount,
+                p.operationNumber,
+                psm.id_operacion,
+                psm.match_type,
+                psm.time_diff_secs,
+                psm.matched_at,
+                op.importe_de_operacion,
+                op.fecha_y_hora_operacion,
+                op.fecha_de_deposito,
+                op.n_voucher,
+                op.codigo_de_autorizacion,
+                op.suma_depositada
+            FROM payment_source_match psm
+            JOIN payments p                 ON p.id = psm.id_payment
+            LEFT JOIN operaciones_niubiz op  ON op.id_operacion = psm.id_operacion
+            WHERE psm.source     = :source
+              AND psm.canceled   = 0
+              AND p.recordDate BETWEEN :date_from AND :date_to
+            ORDER BY p.recordDate, psm.id
+        """),
+        {
+            "source":    SOURCE_NIUBIZ,
+            "date_from": request.date_from,
+            "date_to":   request.date_to,
+        },
+    ).mappings().all()
+
+    if not rows:
+        return {
+            'code':    200,
+            'message': 'No hay registros pendientes de confirmar en el rango indicado',
+            'ids':     [],
+        }
+
+    report = [dict(r) for r in rows]
+    ids = [r["id_match"] for r in report]
+
+    df = pd.DataFrame(data=report)
+    df.to_excel(CANCELLATION_BOOK_FILENAME, index=False)
+
+    return {
+        'code':    200,
+        'message': 'Asiento contable de cancelación generado. Revisar el Excel y luego confirmar enviando "ids" a /bills/cancellation_book/confirm.',
+        'file':    CANCELLATION_BOOK_FILENAME,
+        'ids':     ids,
+    }
+
+
+@router.post("/cancellation_book/confirm")
+def confirm_cancellation_book(
+    request: CancelCancellationBook,
+    db: Session = Depends(get_db),
+):
+    """
+    Marca como cancelados (canceled) los payment_source_match cuyos ids
+    fueron revisados manualmente en el Excel de /bills/cancellation_book.
+
+    Solo marca los que siguen pendientes (canceled = false); si algún id
+    ya estaba marcado o no existe, se reporta en "skipped" sin bloquear
+    la confirmación del resto.
+    """
+    if not request.ids:
+        return {'code': 400, 'message': 'No se recibieron ids para confirmar'}
+
+    pending = db.query(PaymentSourceMatch).filter(
+        PaymentSourceMatch.id.in_(request.ids),
+        PaymentSourceMatch.canceled == False,
+    ).all()
+
+    found_ids = {match.id for match in pending}
+    skipped = [id_match for id_match in request.ids if id_match not in found_ids]
+
+    now = datetime.utcnow()
+    for match in pending:
+        match.canceled = True
+        match.canceled_at = now
+    db.commit()
+
+    return {
+        'code':     200,
+        'message':  'Confirmación registrada',
+        'canceled': sorted(found_ids),
+        'skipped':  skipped,
+    }
+
+
 @router.post('/insert_payment_types')
 def insert_payment_type(db: Session = Depends(get_db)):
   i = 0
@@ -809,12 +917,16 @@ def insert_payment(requestPayment: RequestPayment, db: Session = Depends(get_db)
     items = response.json()['items']
     for payment in items:
       operationNumber = None
+      id_document = None
+      id_return = None
       if payment['attributes']:
           for attribute in payment['attributes']:
               if attribute['name'] == 'N° de operación' or attribute['name'] == 'Número Operación':
-                operationNumber = attribute['value']
-      if payment['documentId'] == 0:
-        continue
+                operationNumber = attribute['value'].strip()
+      if "document" in payment:
+        id_document = payment['document']['id']
+      if "return" in payment:
+        id_return = payment['return']['id']
       payment_to_insert = {
         'id': payment['id'],
         'recordDate': convert_timestamp_peru(payment['recordDate']).date(),
@@ -823,8 +935,9 @@ def insert_payment(requestPayment: RequestPayment, db: Session = Depends(get_db)
         'isCreditPayment': payment['isCreditPayment'],
         'createdAt': datetime.fromtimestamp(payment['createdAt']),
         'inactive': payment['state'],
-        'id_document': payment['documentId'],
-        'id_payment_type': payment['payment_type']['id']
+        'id_document': id_document,
+        'id_payment_type': payment['payment_type']['id'],
+        'id_return': id_return
       }
       insert_or_update_payment(Payments(**payment_to_insert), db)
     total = int(count/50)

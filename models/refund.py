@@ -15,3 +15,4 @@ class Return(Base):
     credit_note_id = Column(Integer, ForeignKey('documents.id'), nullable=False)
     reference_document_id = Column(Integer, nullable=False)
     document = relationship("Document", back_populates="refund")
+    payments = relationship("Payment", back_populates="refund")

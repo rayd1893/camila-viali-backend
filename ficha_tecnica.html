@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ficha Tecnica - Camila Viali</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #1f2328;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  h1 {
+    font-size: 22px;
+    border-bottom: 3px solid #2c3e50;
+    padding-bottom: 8px;
+    margin-top: 0;
+    color: #17202a;
+    page-break-before: always;
+  }
+  h1:first-of-type { page-break-before: avoid; }
+  h2 {
+    font-size: 16px;
+    color: #1a5276;
+    border-bottom: 1px solid #d0d3d4;
+    padding-bottom: 4px;
+    margin-top: 26px;
+  }
+  h3 {
+    font-size: 13px;
+    color: #2874a6;
+    margin-top: 18px;
+  }
+  p, li { font-size: 11.5px; }
+  code {
+    background: #f4f6f6;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: Consolas, monospace;
+    font-size: 10.5px;
+    color: #a33e3e;
+  }
+  pre {
+    background: #f4f6f6;
+    border: 1px solid #e0e3e4;
+    border-radius: 4px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-size: 10px;
+    line-height: 1.4;
+    page-break-inside: avoid;
+  }
+  pre code { background: none; padding: 0; color: #2c3e50; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 10.5px;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid #d0d3d4;
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #eaf2f8; color: #17202a; }
+  tr:nth-child(even) td { background: #fbfcfc; }
+  blockquote {
+    border-left: 4px solid #2874a6;
+    margin: 12px 0;
+    padding: 4px 14px;
+    background: #f4f8fb;
+    color: #34495e;
+    font-style: italic;
+  }
+  hr { border: none; border-top: 1px solid #d0d3d4; margin: 22px 0; }
+  ul, ol { margin: 6px 0; padding-left: 22px; }
+  strong { color: #17202a; }
+  a { color: #1a5276; }
+</style>
+</head>
+<body>
+<h1 id="ficha-tecnica-camila-viali-backend-contable-conciliacion-de-pagos">FICHA TÉCNICA — CAMILA VIALI (Backend contable / conciliación de pagos)</h1>
+<h2 id="1-informacion-general">1. Información general</h2>
+<p><strong>Nombre del proyecto:</strong> camila-viali-backend
+<strong>Tipo de aplicación:</strong> API de integración contable y conciliación de pagos (back-office), con panel administrativo web planeado
+<strong>Versión:</strong> MVP en producción (backend) / Frontend aún no iniciado
+<strong>Stack tecnológico actual (backend):</strong></p>
+<ul>
+<li>Python 3.10</li>
+<li>FastAPI</li>
+<li>SQLAlchemy (ORM)</li>
+<li>MySQL</li>
+<li>Pydantic</li>
+<li>PyJWT + bcrypt (autenticación)</li>
+<li>Pandas + openpyxl (generación de reportes Excel)</li>
+<li>Integraciones HTTP con Bsale API y API SUNAT</li>
+</ul>
+<p><strong>Stack tecnológico planeado (frontend):</strong></p>
+<ul>
+<li>Angular</li>
+<li>TypeScript</li>
+<li>Tailwind CSS</li>
+</ul>
+<blockquote>
+<p>El frontend todavía no existe. Esta ficha documenta el backend tal como está implementado hoy y define el alcance esperado del panel administrativo que se construirá sobre él.</p>
+</blockquote>
+<hr />
+<h1 id="2-descripcion-del-negocio">2. Descripción del negocio</h1>
+<p>Camila Viali es una empresa retail que opera su punto de venta / ERP sobre <strong>Bsale</strong>. El negocio necesita:</p>
+<ul>
+<li>Centralizar en una base de datos propia (MySQL) los documentos electrónicos (boletas, facturas, notas de crédito), pagos, tipos de cambio y tipos de pago que se generan en Bsale.</li>
+<li>Conciliar los pagos con tarjeta contra las operaciones reportadas por <strong>Niubiz</strong> (pasarela de pagos), para confirmar que el dinero depositado por el operador corresponde a las ventas registradas.</li>
+<li>Generar reportes contables (libro de ventas, asiento contable, asiento de cancelación) en formato Excel para ser cargados al sistema contable (SIIGO).</li>
+<li>Mantener un sistema de usuarios internos con roles y permisos para controlar quién puede ejecutar cada proceso.</li>
+</ul>
+<p>Hoy esta lógica vive únicamente como una API (FastAPI) que se opera vía llamadas HTTP/Postman o procesos batch. El objetivo de la siguiente fase es exponer esa misma lógica a través de un panel administrativo web (Angular) para que el equipo contable/financiero no dependa de llamar la API manualmente.</p>
+<hr />
+<h1 id="3-objetivo-del-proyecto">3. Objetivo del proyecto</h1>
+<ol>
+<li>Mantener sincronizada la base de datos local con los documentos, pagos, tipos de cambio y tipos de pago de Bsale.</li>
+<li>Cargar y conciliar automáticamente los reportes de Niubiz contra los pagos registrados.</li>
+<li>Permitir revisar y confirmar manualmente el "libro de cancelación" antes de darlo por cerrado.</li>
+<li>Generar reportes contables (libro de ventas, asiento contable) listos para el área de contabilidad.</li>
+<li>Administrar usuarios internos, roles y permisos.</li>
+<li>Construir un panel web (Angular) que permita ejecutar y monitorear todos estos procesos sin usar la API directamente.</li>
+</ol>
+<hr />
+<h1 id="4-evento-central-del-sistema">4. Evento central del sistema</h1>
+<p>El evento central del sistema es:</p>
+<blockquote>
+<p><strong>Conciliar un pago recibido por Niubiz contra el pago registrado en Bsale, y dejar evidencia contable de esa conciliación.</strong></p>
+</blockquote>
+<p>Flujo principal:</p>
+<pre><code class="language-text">Bsale (ERP / POS)
+        ↓
+Se generan documentos y pagos
+        ↓
+Backend sincroniza documentos, pagos, tipos de cambio (insert_*)
+        ↓
+Se sube el archivo de liquidación Niubiz (upload_niubiz)
+        ↓
+Se ejecuta el matching (matching_niubiz)
+        ↓
+Cada pago queda asociado (o no) a una operación Niubiz
+        ↓
+Se genera el asiento de cancelación para revisión (cancellation_book)
+        ↓
+Un responsable revisa el Excel generado
+        ↓
+Se confirma la conciliación (cancellation_book/confirm)
+        ↓
+Se generan libro de ventas y asiento contable (sales_book / book_entry)
+        ↓
+Contabilidad recibe los archivos listos para SIIGO
+</code></pre>
+<hr />
+<h1 id="5-tipos-de-usuario">5. Tipos de usuario</h1>
+<p>El sistema usa un modelo de <strong>roles y permisos dinámico</strong> (tablas <code>roles</code>, <code>permissions</code>, <code>role_permission</code>), no roles fijos en código. Un usuario (<code>users</code>) pertenece a un rol (<code>role_id</code>), y cada rol tiene un conjunto de permisos asignados.</p>
+<p>Esto permite crear roles como los siguientes (sugeridos para el panel, configurables sin tocar código):</p>
+<h2 id="51-administrador">5.1 Administrador</h2>
+<ul>
+<li>Gestionar usuarios (crear, editar, desactivar).</li>
+<li>Gestionar roles y permisos.</li>
+<li>Acceso completo a todos los módulos de conciliación y reportes.</li>
+</ul>
+<h2 id="52-contable-financiero">5.2 Contable / Financiero</h2>
+<ul>
+<li>Ejecutar sincronización de documentos, pagos y tipos de cambio.</li>
+<li>Cargar archivos Niubiz y ejecutar el matching.</li>
+<li>Revisar y confirmar el libro de cancelación.</li>
+<li>Generar libro de ventas y asiento contable.</li>
+<li>No puede gestionar usuarios ni roles.</li>
+</ul>
+<h2 id="53-consulta-solo-lectura">5.3 Consulta (solo lectura)</h2>
+<ul>
+<li>Visualizar documentos, pagos y reportes generados.</li>
+<li>No puede ejecutar procesos de carga, matching ni confirmación.</li>
+</ul>
+<blockquote>
+<p>Los permisos concretos (<code>permission</code>) deben definirse como catálogo en la tabla <code>permissions</code> y asignarse por rol vía <code>role_permission</code>. El backend ya valida permisos por endpoint mediante <code>PermissionChecker</code>.</p>
+</blockquote>
+<hr />
+<h1 id="6-modulos-actuales-del-backend">6. Módulos actuales del backend</h1>
+<h2 id="61-autenticacion-users">6.1 Autenticación (<code>/users</code>)</h2>
+<ul>
+<li><code>POST /users/login</code> — autentica por <code>username</code> o <code>email</code> + password (bcrypt), devuelve un JWT (<code>access_token</code>, expira en 90 minutos).</li>
+<li><code>GET /users/me</code> — devuelve el usuario autenticado a partir del token.</li>
+<li>Todo el API además exige un header global <code>X-Token</code> (secreto compartido, <code>SECRET_TOKEN</code>) validado en <code>dependencies.verify_token</code> para <strong>todas</strong> las rutas, independientemente del JWT.</li>
+<li>Autorización fina por permiso vía <code>PermissionChecker(required_permission)</code>, que revisa si el rol del usuario autenticado tiene el permiso requerido.</li>
+</ul>
+<h2 id="62-usuarios-users">6.2 Usuarios (<code>/users</code>)</h2>
+<ul>
+<li><code>GET /users/</code> — lista usuarios activos (con sus permisos de rol cargados).</li>
+<li><code>POST /users/</code> — crea usuario (hash de password con bcrypt).</li>
+<li><code>GET /users/{username}</code> — endpoint de prueba (pendiente de completar, hoy solo hace eco del username).</li>
+</ul>
+<h2 id="63-roles-roles">6.3 Roles (<code>/roles</code>)</h2>
+<ul>
+<li><code>GET /roles/</code> — lista roles.</li>
+<li><code>POST /roles/</code> — crea un rol.</li>
+</ul>
+<blockquote>
+<p>Falta CRUD completo de roles (editar, eliminar, asignar/quitar permisos) y CRUD de permisos — ver sección 14 (pendientes).</p>
+</blockquote>
+<h2 id="64-documentos-pagos-y-reportes-bills">6.4 Documentos, pagos y reportes (<code>/bills</code>)</h2>
+<p>Este es el módulo principal del sistema. Endpoints actuales:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Método</th>
+<th>Función</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/bills/extract_data</code></td>
+<td>GET</td>
+<td>Sincroniza documentos (boletas/facturas/NC), clientes, monedas y desgloses de impuestos desde Bsale hacia la BD local, para un rango de fechas de emisión.</td>
+</tr>
+<tr>
+<td><code>/bills/insert_payment_types</code></td>
+<td>POST</td>
+<td>Sincroniza el catálogo de tipos de pago desde Bsale.</td>
+</tr>
+<tr>
+<td><code>/bills/insert_payments</code></td>
+<td>POST</td>
+<td>Sincroniza pagos desde Bsale para una fecha de registro (<code>recordDate</code>), incluyendo N° de operación asociado.</td>
+</tr>
+<tr>
+<td><code>/bills/insert_exchanges</code></td>
+<td>POST</td>
+<td>Sincroniza tipos de cambio (compra/venta) desde SUNAT para un mes/año.</td>
+</tr>
+<tr>
+<td><code>/bills/upload_niubiz</code></td>
+<td>POST</td>
+<td>Carga un archivo Excel de liquidación de Niubiz y lo inserta en <code>operaciones_niubiz</code>.</td>
+</tr>
+<tr>
+<td><code>/bills/matching_niubiz</code></td>
+<td>POST</td>
+<td>Ejecuta el algoritmo de conciliación entre <code>payments</code> y <code>operaciones_niubiz</code> para un rango de fechas, en dos pasadas (por voucher/código de autorización primero, luego por tolerancia de tiempo/fecha). Persiste resultados en <code>payment_source_match</code>.</td>
+</tr>
+<tr>
+<td><code>/bills/cancellation_book</code></td>
+<td>GET</td>
+<td>Genera el Excel de asiento de cancelación con los matches pendientes de confirmar (<code>canceled = 0</code>) en un rango de fechas. No modifica datos.</td>
+</tr>
+<tr>
+<td><code>/bills/cancellation_book/confirm</code></td>
+<td>POST</td>
+<td>Marca como confirmados (<code>canceled = 1</code>) los <code>payment_source_match</code> cuyos ids fueron revisados manualmente en el Excel anterior.</td>
+</tr>
+<tr>
+<td><code>/bills/sales_book</code></td>
+<td>GET</td>
+<td>Genera el libro de ventas (formato tributario Perú: código tributario, serie, receptor, IGV, neto, total, referencias de notas de crédito, anulaciones) para un rango de fechas.</td>
+</tr>
+<tr>
+<td><code>/bills/book_entry</code></td>
+<td>GET</td>
+<td>Genera el asiento contable (formato SIIGO: cuentas, centros de costo/subcentro, referencias, impuestos desglosados) para un rango de fechas.</td>
+</tr>
+</tbody>
+</table>
+<p>Reglas de negocio relevantes ya implementadas:</p>
+<ul>
+<li>El matching prioriza coincidencias exactas por voucher/código de autorización, luego por tiempo exacto, luego por tolerancia de tiempo, luego por fecha (fallback), evitando que una operación Niubiz se use dos veces.</li>
+<li>El proceso de matching es incremental: pagos ya conciliados y operaciones ya usadas no se vuelven a procesar dentro del mismo rango.</li>
+<li>El libro de ventas y el asiento contable invierten los montos en notas de crédito y anulan los importes en documentos anulados (<code>canceled = true</code>).</li>
+<li>Las series de documento se traducen a su equivalente SIIGO (<code>get_serial_number_siigo</code>) y se asignan a centro/subcentro de costo.</li>
+</ul>
+<hr />
+<h1 id="7-integraciones-externas">7. Integraciones externas</h1>
+<table>
+<thead>
+<tr>
+<th>Integración</th>
+<th>Uso</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bsale API</strong> (<code>ACCESS_TOKEN_BSALE</code>)</td>
+<td>Origen de documentos, clientes, monedas, pagos, tipos de pago y desgloses de impuestos.</td>
+</tr>
+<tr>
+<td><strong>API SUNAT</strong> (<code>API_SUNAT_URL</code>, <code>API_SUNAT_TOKEN</code>)</td>
+<td>Origen de tipos de cambio oficiales (compra/venta) por día.</td>
+</tr>
+<tr>
+<td><strong>Niubiz</strong></td>
+<td>No es una API en línea en el código actual: se procesa mediante carga manual de archivo Excel de liquidación (<code>upload_niubiz</code>).</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="8-modelo-de-datos-actual">8. Modelo de datos actual</h1>
+<h2 id="users">users</h2>
+<pre><code class="language-text">id, username, email, password (hash bcrypt), first_name, last_name, status, role_id (FK roles)
+</code></pre>
+<h2 id="roles-permissions-role_permission">roles / permissions / role_permission</h2>
+<pre><code class="language-text">roles: id, role, description, status
+permissions: id, permission, description, status
+role_permission: role_id (FK), permission_id (FK), status
+</code></pre>
+<h2 id="clients">clients</h2>
+<pre><code class="language-text">id, first_name, last_name, email, code, phone, company,
+company_or_person (bool), is_foreigner (bool)
+</code></pre>
+<h2 id="coins">coins</h2>
+<pre><code class="language-text">id, name, symbol, code
+</code></pre>
+<h2 id="document_types">document_types</h2>
+<pre><code class="language-text">id, name, code, is_electronic_document, is_credit_note, commercial_code
+</code></pre>
+<h2 id="documents">documents</h2>
+<pre><code class="language-text">id, emission_date, expiration_date, generation_date, serial_number, tracking_number,
+total_amount, net_amount, tax_amount, exempt_amount,
+address, district, city, canceled, url_pdf,
+id_document_type (FK), id_client (FK), id_coin (FK)
+</code></pre>
+<h2 id="breakdowns-desglose-de-impuestos-por-documento">breakdowns (desglose de impuestos por documento)</h2>
+<pre><code class="language-text">id, document_id (FK), tax_id (FK), amount
+</code></pre>
+<h2 id="taxes">taxes</h2>
+<pre><code class="language-text">id, name, percentage, forAllProducts, amountTax, code
+</code></pre>
+<h2 id="payment_types">payment_types</h2>
+<pre><code class="language-text">id, name, isVirtual, isCheck, isCreditNote, isClientCredit, isCash, isCreditMemo, inactive, isAgreementBank
+</code></pre>
+<h2 id="payments">payments</h2>
+<pre><code class="language-text">id, recordDate, amount, operationNumber, isCreditPayment, createdAt, inactive,
+id_document (FK), id_payment_type (FK), id_return (FK)
+</code></pre>
+<h2 id="returns-notas-de-credito-devoluciones">returns (notas de crédito / devoluciones)</h2>
+<pre><code class="language-text">id, code, return_date, motive, type, amount,
+credit_note_id (FK documents), reference_document_id
+</code></pre>
+<h2 id="operaciones_niubiz">operaciones_niubiz</h2>
+<pre><code class="language-text">id_operacion, ruc, razon_social, cod_comercio, nombre_comercial,
+fecha_y_hora_operacion, fecha_de_deposito,
+producto, tipo_de_operacion, tarjeta, origen_tarjeta, tipo_de_tarjeta, marca_de_tarjeta,
+moneda, importe_de_operacion, es_dcc, monto_dcc,
+comision_total, comision_niubiz, igv, suma_depositada, estado,
+cuenta_banco_pagador, banco_pagador, n_serie_terminal,
+codigo_de_autorizacion, n_referencia, n_lote, n_voucher, tipo_de_abono
+</code></pre>
+<h2 id="payment_source_match-conciliacion">payment_source_match (conciliación)</h2>
+<pre><code class="language-text">id, id_payment (FK payments, único), id_operacion (FK lógica a la fuente),
+source ('NIUBIZ' | ...), match_type (EXACT | TIME_TOLERANCE | WEB_ONLY | DATE_FALLBACK | VOUCHER_MATCH | AUTH_CODE),
+time_diff_secs, matched_at, canceled (bool), canceled_at
+</code></pre>
+<h2 id="centers-subcenters">centers / subcenters</h2>
+<pre><code class="language-text">centers: id, description
+subcenters: id, subcenter_code, description, id_center (FK)
+</code></pre>
+<h2 id="exchanges">exchanges</h2>
+<pre><code class="language-text">id, day, value, type ('C' compra | 'V' venta)
+</code></pre>
+<h2 id="approvals">approvals</h2>
+<pre><code class="language-text">id, bsale, siigo   -- mapea series/códigos de documento de Bsale a SIIGO
+</code></pre>
+<hr />
+<h1 id="9-relaciones-principales">9. Relaciones principales</h1>
+<pre><code class="language-text">User
+ └── belongsTo Role
+      └── belongsToMany Permission (role_permission)
+
+Client
+ └── hasMany Document
+
+Document
+ ├── belongsTo DocumentType
+ ├── belongsTo Client
+ ├── belongsTo Coin
+ ├── hasOne Return (si es nota de crédito)
+ ├── hasMany Breakdown
+ └── hasMany Payment
+
+Payment
+ ├── belongsTo Document
+ ├── belongsTo PaymentType
+ ├── belongsTo Return (si es pago por devolución)
+ └── hasOne PaymentSourceMatch
+
+PaymentSourceMatch
+ └── referencia lógica a OperacionNiubiz (por id_operacion + source)
+
+Center
+ └── hasMany Subcenter
+
+Breakdown
+ ├── belongsTo Document
+ └── belongsTo Tax
+</code></pre>
+<hr />
+<h1 id="10-estructura-actual-del-backend-fastapi">10. Estructura actual del backend (FastAPI)</h1>
+<pre><code class="language-text">camila-viali-backend/
+├── main.py                  # instancia FastAPI, middlewares, routers
+├── dependencies.py          # verify_token (X-Token global)
+├── models/
+│   ├── engine/connection.py # engine SQLAlchemy + get_db()
+│   └── *.py                 # un modelo por tabla
+├── routers/
+│   ├── users.py             # auth, usuarios
+│   ├── roles.py             # roles
+│   └── bills.py             # documentos, pagos, niubiz, reportes contables
+└── schemas/
+    ├── user.py
+    ├── role.py
+    └── bill.py               # DTOs de request/response del módulo bills
+</code></pre>
+<p>No existen todavía: capa de <code>services</code> separada de los routers, tests automatizados, ni <code>requirements.txt</code> con versiones fijadas (el archivo existe pero está vacío).</p>
+<hr />
+<h1 id="11-seguridad">11. Seguridad</h1>
+<p>Implementado:</p>
+<ul>
+<li>Header <code>X-Token</code> obligatorio en toda la API (secreto compartido vía variable de entorno), aplicado globalmente como dependencia de la app.</li>
+<li>Autenticación por JWT (<code>PyJWT</code>), firmado con clave simétrica, expiración de 90 minutos.</li>
+<li>Password hasheado con <code>bcrypt</code>.</li>
+<li>Autorización fina por permiso (<code>PermissionChecker</code>) a nivel de endpoint.</li>
+<li>CORS restringido a orígenes explícitos (<code>localhost</code>, <code>localhost:4200</code> ya habilitado pensando en Angular).</li>
+</ul>
+<p>Pendiente / a reforzar antes de exponer un panel web:</p>
+<ul>
+<li>Mover el secreto del JWT (<code>key='secret'</code>) a variable de entorno (<code>SECRET_KEY</code> ya existe en <code>.env</code> pero no se está usando en el código de firma).</li>
+<li>Aplicar <code>PermissionChecker</code> de forma consistente en <strong>todos</strong> los endpoints de <code>bills.py</code> (hoy no todos lo usan).</li>
+<li>Manejo de expiración/errores de JWT con respuestas controladas (hoy <code>jwt.decode</code> puede lanzar excepción no controlada).</li>
+<li>Rate limiting en <code>/users/login</code>.</li>
+<li>No commitear archivos generados con datos reales (Excel/CSV de reportes) — ver sección 14.</li>
+</ul>
+<hr />
+<h1 id="12-frontend-planeado-angular-typescript-tailwind-css">12. Frontend (planeado) — Angular + TypeScript + Tailwind CSS</h1>
+<p>Aún no existe código de frontend. Se construirá como una SPA en Angular que consuma esta API.</p>
+<h2 id="121-consideraciones-de-integracion">12.1 Consideraciones de integración</h2>
+<ul>
+<li>El backend ya permite CORS desde <code>http://localhost:4200</code> (puerto por defecto de Angular).</li>
+<li>Toda petición deberá incluir el header <code>X-Token</code> (secreto de aplicación) y el <code>Authorization: Bearer &lt;JWT&gt;</code> una vez logueado.</li>
+<li>Angular deberá manejar la renovación/expiración del JWT (90 min) con un interceptor HTTP.</li>
+</ul>
+<h2 id="122-estructura-conceptual-sugerida">12.2 Estructura conceptual sugerida</h2>
+<pre><code class="language-text">src/app/
+├── core/
+│   ├── interceptors/        # auth.interceptor.ts (X-Token + Bearer), error.interceptor.ts
+│   ├── guards/               # auth.guard.ts, permission.guard.ts
+│   └── services/             # auth.service.ts, http-base.service.ts
+├── shared/
+│   ├── components/           # tablas, botones, modales, date-range-picker
+│   └── pipes/ directives/
+├── features/
+│   ├── auth/
+│   │   └── login/
+│   ├── dashboard/
+│   ├── users/                 # CRUD usuarios
+│   ├── roles/                 # CRUD roles y asignación de permisos
+│   ├── documents/              # consulta de documentos sincronizados
+│   ├── payments/                # consulta de pagos sincronizados
+│   ├── niubiz/
+│   │   ├── upload/              # carga de archivo de liquidación
+│   │   └── matching/            # ejecutar y revisar matching
+│   ├── cancellation-book/        # revisión y confirmación del libro de cancelación
+│   └── reports/
+│       ├── sales-book/            # libro de ventas
+│       └── book-entry/             # asiento contable
+├── app.routes.ts
+└── app.config.ts
+</code></pre>
+<p>Estilos con <strong>Tailwind CSS</strong> (utility-first), sin librería de componentes adicional salvo que el equipo decida incorporar una (ej. PrimeNG, Angular Material) — a definir.</p>
+<h2 id="123-pantallas-minimas-del-mvp-de-frontend">12.3 Pantallas mínimas del MVP de frontend</h2>
+<ol>
+<li><strong>Login</strong> — consume <code>POST /users/login</code>.</li>
+<li><strong>Dashboard</strong> — resumen de últimas sincronizaciones, pagos sin conciliar, pendientes de confirmación.</li>
+<li><strong>Usuarios</strong> — listar/crear (<code>/users</code>), pendiente: editar/desactivar.</li>
+<li><strong>Roles y permisos</strong> — listar/crear roles (<code>/roles</code>), pendiente: asignar permisos.</li>
+<li><strong>Sincronización</strong> — formularios para disparar <code>extract_data</code>, <code>insert_payments</code>, <code>insert_payment_types</code>, <code>insert_exchanges</code> por rango/fecha.</li>
+<li><strong>Niubiz</strong> — subir archivo (<code>upload_niubiz</code>), ejecutar matching (<code>matching_niubiz</code>), ver resultados (matcheados/sin match).</li>
+<li><strong>Libro de cancelación</strong> — generar (<code>cancellation_book</code>), revisar tabla en pantalla (no solo Excel), confirmar selección (<code>cancellation_book/confirm</code>).</li>
+<li><strong>Reportes</strong> — generar y descargar libro de ventas y asiento contable por rango de fechas.</li>
+</ol>
+<hr />
+<h1 id="13-responsive">13. Responsive</h1>
+<p>Prioridad media-alta: es un panel interno de uso administrativo, principalmente en desktop, pero debe ser usable en tablet. Mobile no es prioritario para el MVP del frontend.</p>
+<hr />
+<h1 id="14-pendientes-conocidos-del-backend-a-resolver-antes-o-durante-la-construccion-del-frontend">14. Pendientes conocidos del backend (a resolver antes o durante la construcción del frontend)</h1>
+<ol>
+<li><code>requirements.txt</code> vacío — no hay versiones fijadas de dependencias.</li>
+<li>Archivos generados (reportes Excel/CSV con datos reales de clientes y operaciones) están sueltos en la raíz del repo y sin trackear — <strong>no deben commitearse</strong>; deben excluirse vía <code>.gitignore</code> y, de ser necesario, moverse a un storage fuera del repositorio.</li>
+<li><code>__pycache__/*.pyc</code> versionados en git — deben ignorarse.</li>
+<li>CRUD incompleto de usuarios (editar, desactivar) y de roles/permisos (editar, eliminar, asignar permisos).</li>
+<li><code>GET /users/{username}</code> es un stub sin implementar.</li>
+<li>Clave de firma JWT hardcodeada (<code>'secret'</code>) en vez de usar <code>SECRET_KEY</code> del <code>.env</code>.</li>
+<li>Sin tests automatizados.</li>
+<li><code>PermissionChecker</code> no aplicado de forma uniforme en todos los endpoints sensibles de <code>bills.py</code>.</li>
+<li>No existe endpoint para editar/eliminar documentos, pagos o configuraciones (clients, centers, subcenters, taxes) desde la API — hoy se insertan solo vía sincronización con Bsale.</li>
+</ol>
+<hr />
+<h1 id="15-prioridad-de-implementacion-sugerida">15. Prioridad de implementación sugerida</h1>
+<h2 id="bloque-1-saneamiento-del-backend">BLOQUE 1 — Saneamiento del backend</h2>
+<ol>
+<li>Congelar <code>requirements.txt</code>.</li>
+<li>Sacar del repo y del historial los archivos de datos reales (Excel/CSV) y el <code>__pycache__</code>.</li>
+<li>Mover el secreto JWT a <code>SECRET_KEY</code> de entorno.</li>
+<li>Manejo de errores controlado en <code>get_current_user</code>.</li>
+</ol>
+<h2 id="bloque-2-completar-api-de-soporte-al-panel">BLOQUE 2 — Completar API de soporte al panel</h2>
+<ol>
+<li>CRUD completo de usuarios (editar, activar/desactivar).</li>
+<li>CRUD completo de roles y gestión de permisos (asignar/quitar).</li>
+<li>Endpoints de consulta paginada para documents, payments, operaciones_niubiz (hoy los reportes solo devuelven Excel/objetos completos, no hay listados paginados pensados para UI).</li>
+<li>Aplicar <code>PermissionChecker</code> en todos los endpoints de <code>bills.py</code>.</li>
+</ol>
+<h2 id="bloque-3-frontend-base-del-proyecto-angular">BLOQUE 3 — Frontend: base del proyecto Angular</h2>
+<ol>
+<li>Crear proyecto Angular + Tailwind CSS + TypeScript estricto.</li>
+<li>Layout base, routing, interceptores (<code>X-Token</code>, <code>Authorization</code>), guards.</li>
+<li>Login conectado a <code>/users/login</code> + manejo de sesión.</li>
+</ol>
+<h2 id="bloque-4-frontend-modulos-administrativos">BLOQUE 4 — Frontend: módulos administrativos</h2>
+<ol>
+<li>Usuarios y Roles (CRUD).</li>
+<li>Dashboard con indicadores básicos (documentos sincronizados, pagos sin conciliar, pendientes de confirmación).</li>
+</ol>
+<h2 id="bloque-5-frontend-flujo-de-conciliacion-flujo-critico-del-negocio">BLOQUE 5 — Frontend: flujo de conciliación (flujo crítico del negocio)</h2>
+<ol>
+<li>Pantalla de sincronización (documentos, pagos, tipos de cambio, tipos de pago).</li>
+<li>Carga de archivo Niubiz + ejecución de matching + visualización de resultados.</li>
+<li>Revisión y confirmación del libro de cancelación desde la UI (no solo Excel).</li>
+</ol>
+<h2 id="bloque-6-frontend-reportes">BLOQUE 6 — Frontend: reportes</h2>
+<ol>
+<li>Generación y descarga de libro de ventas y asiento contable por rango de fechas.</li>
+</ol>
+<hr />
+<h1 id="16-flujo-critico-que-debe-funcionar-de-punta-a-punta">16. Flujo crítico que debe funcionar de punta a punta</h1>
+<pre><code class="language-text">1. Usuario inicia sesión en el panel Angular.
+2. Dispara la sincronización de documentos y pagos de un rango de fechas.
+3. Sube el archivo de liquidación Niubiz del mismo periodo.
+4. Ejecuta el matching.
+5. Ve en pantalla cuántos pagos quedaron conciliados y cuántos sin match.
+6. Genera el asiento de cancelación y lo revisa en pantalla.
+7. Confirma los registros revisados.
+8. Genera el libro de ventas y el asiento contable del periodo.
+9. Descarga ambos archivos para entregarlos a contabilidad.
+</code></pre>
+<p>Si este flujo no funciona completo desde la UI, el panel administrativo no debe considerarse terminado.</p>
+<hr />
+<h1 id="17-testing">17. Testing</h1>
+<p>No existen tests hoy. Prioridad sugerida para el backend:</p>
+<pre><code class="language-text">✓ login exitoso / credenciales inválidas
+✓ endpoint protegido rechaza sin X-Token
+✓ endpoint protegido rechaza sin JWT válido
+✓ PermissionChecker bloquea a un rol sin el permiso requerido
+✓ matching_niubiz no reutiliza una operación ya usada
+✓ matching_niubiz es incremental (no reprocesa pagos ya matcheados)
+✓ cancellation_book/confirm solo marca ids pendientes y reporta los que no aplica
+✓ sales_book invierte montos en notas de crédito
+✓ sales_book anula montos en documentos cancelados
+</code></pre>
+<hr />
+<h1 id="18-restricciones-para-el-desarrollo">18. Restricciones para el desarrollo</h1>
+<ol>
+<li>No romper la lógica de conciliación existente (<code>matching_niubiz</code>) sin cubrir con tests antes/después.</li>
+<li>No commitear datos reales de clientes ni reportes generados.</li>
+<li>Mantener el doble esquema de seguridad (X-Token + JWT + permisos) también desde el frontend.</li>
+<li>No introducir una librería de componentes UI pesada sin antes validarlo con el equipo — mantener Tailwind CSS como base.</li>
+<li>Mantener TypeScript estricto en el frontend; evitar <code>any</code> salvo justificación.</li>
+<li>Las reglas de autorización siempre en backend; el frontend solo oculta/muestra UI según permisos, nunca depende de eso para seguridad real.</li>
+<li>Cualquier nuevo endpoint de listados debe soportar paginación y filtros por fecha, pensando en que la UI los consumirá en tablas.</li>
+</ol>
+<hr />
+<h1 id="19-instrucciones-para-el-agente-de-desarrollo">19. Instrucciones para el agente de desarrollo</h1>
+<p>Antes de modificar código:</p>
+<ol>
+<li>Revisar esta ficha y contrastarla contra el estado real del repositorio (modelos, routers, schemas).</li>
+<li>Priorizar el saneamiento del backend (Bloque 1) antes de construir el frontend.</li>
+<li>Al iniciar el frontend, confirmar con el usuario decisiones de librería de componentes UI (o mantener solo Tailwind) antes de instalar dependencias adicionales.</li>
+<li>Todo nuevo endpoint debe respetar el patrón ya existente: router en <code>routers/</code>, schema Pydantic en <code>schemas/</code>, modelo en <code>models/</code>, sesión vía <code>Depends(get_db)</code>.</li>
+<li>Ejecutar y ampliar tests después de cada bloque una vez exista suite de pruebas.</li>
+</ol>
+<p>Orden sugerido:</p>
+<pre><code class="language-text">Saneamiento backend
+    ↓
+CRUD de soporte (usuarios, roles, permisos, listados paginados)
+    ↓
+Base del frontend Angular
+    ↓
+Módulos administrativos (usuarios, roles, dashboard)
+    ↓
+Flujo de conciliación (Niubiz + libro de cancelación)
+    ↓
+Reportes (libro de ventas, asiento contable)
+</code></pre>
+<hr />
+<h1 id="20-principio-principal-del-proyecto">20. Principio principal del proyecto</h1>
+<p>La prioridad absoluta es que este flujo funcione de punta a punta, ahora también desde una interfaz web:</p>
+<blockquote>
+<p><strong>SINCRONIZAR DATOS DE BSALE → CONCILIAR CON NIUBIZ → CONFIRMAR MANUALMENTE → GENERAR REPORTES CONTABLES</strong></p>
+</blockquote>
+<p>Todo desarrollo que no contribuya directamente a este flujo (incluyendo mejoras visuales del frontend) debe considerarse secundario mientras el panel no cubra el flujo completo.</p>
+<hr />
+<h1 id="21-evolucion-futura">21. Evolución futura</h1>
+<pre><code class="language-text">Panel de conciliación (MVP)
+        ↓
+Soporte para más pasarelas de pago además de Niubiz
+        ↓
+Conciliación automática vía API de Niubiz (sin carga manual de Excel)
+        ↓
+Dashboard financiero con indicadores históricos
+        ↓
+Integración directa con SIIGO (en vez de exportar Excel)
+        ↓
+Auditoría / historial de cambios por usuario
+        ↓
+Notificaciones (pagos sin conciliar, periodos pendientes de cierre)
+</code></pre>
+<p>La arquitectura actual (FastAPI + SQLAlchemy + MySQL, separación por routers/modelos/schemas) permite esta evolución sin necesidad de reescribir el backend existente.</p>
+</body>
+</html>
