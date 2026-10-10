@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
@@ -28,6 +28,32 @@ class RequestCancellationBook(BaseModel):
 
 class CancelCancellationBook(BaseModel):
     ids: list[int]
+
+class RequestCancellationEntry(BaseModel):
+    date_from: date
+    date_to: date
+    niubiz_lookback_days: int = 20
+    niubiz_lookahead_days: int = 10
+
+class CancellationEntryFolioOut(BaseModel):
+    id: int
+    serial_number_report: str
+    year_month: str
+    sequence_number: int
+    document_number: str
+    emission_date: Optional[date] = None
+    source: str
+    note: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class RequestRegisterManualFolio(BaseModel):
+    serial_number_report: str = Field(min_length=1, max_length=10)
+    year_month: str = Field(pattern=r"^\d{4}$", description="Formato AAMM, ej. '2608' para agosto 2026")
+    sequence_number: int = Field(gt=0)
+    note: Optional[str] = Field(default=None, max_length=300)
 
 class Clients(BaseModel):
     id: int

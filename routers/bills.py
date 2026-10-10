@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from requests import request
 from dotenv import load_dotenv
 import re
@@ -28,7 +28,9 @@ from models.payment_type import PaymentType
 from models.payment import Payment
 from models.niubiz import OperacionNiubiz
 from models.payment_source_match import PaymentSourceMatch
-from schemas.bill import Clients, Coins, DocumentTypes, Documents, Returns, RequestDocument, RequestExchange, RequestReport, RequestPayment, Exchanges, Approvals, Centers, Subcenters, Payments, PaymentTypes, OperacionesNiubiz, RequestPaymentMatch, RequestCancellationBook, CancelCancellationBook
+from models.cancellation_entry_folio import CancellationEntryFolio
+from schemas.bill import Clients, Coins, DocumentTypes, Documents, Returns, RequestDocument, RequestExchange, RequestReport, RequestPayment, Exchanges, Approvals, Centers, Subcenters, Payments, PaymentTypes, OperacionesNiubiz, RequestPaymentMatch, RequestCancellationBook, CancelCancellationBook, RequestCancellationEntry, CancellationEntryFolioOut, RequestRegisterManualFolio
+from services.cancellation_entry import generate_cancellation_entry_rows
 from typing import List
 
 load_dotenv()
@@ -57,7 +59,7 @@ log = logging.getLogger(__name__)
 
 # Cargar base niubiz
 UNIQUE_FIELD = "id_operacion"
-HEADER_ROW   = 7
+HEADER_ROW   = 5
 
 
 # Configuraciones para el match
@@ -341,7 +343,7 @@ def parse_niubiz_fecha(raw: str) -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.strptime(raw.strip(), "%d-%m-%Y %H:%M:%S")
+        return datetime.strptime(raw.strip(), "%d-%m-%Y %H:%M")
     except ValueError:
         log.warning("Fecha Niubiz no parseable: %r", raw)
         return None
@@ -862,6 +864,127 @@ def confirm_cancellation_book(
         'message':  'Confirmación registrada',
         'canceled': sorted(found_ids),
         'skipped':  skipped,
+    }
+
+
+@router.get("/cancellation_entry/folios", response_model=List[CancellationEntryFolioOut])
+def list_cancellation_entry_folios(
+    serial_number_report: str,
+    year_month: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Lista los folios (NÚMERO DE DOCUMENTO) ya usados para una tienda y mes
+    determinados en cancellation_entry_folio, tanto los generados por el
+    proceso automático (`source='auto'`) como los registrados a mano
+    (`source='manual'`). Pensado para que, antes de crear un libro manual en
+    SIIGO, alguien pueda ver cuál es el último folio usado y qué número le
+    corresponde al siguiente.
+    """
+    folios = db.query(CancellationEntryFolio).filter(
+        CancellationEntryFolio.serial_number_report == serial_number_report,
+        CancellationEntryFolio.year_month == year_month,
+    ).order_by(CancellationEntryFolio.sequence_number).all()
+    return folios
+
+
+@router.post(
+    "/cancellation_entry/folios",
+    response_model=CancellationEntryFolioOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_manual_cancellation_entry_folio(
+    request: RequestRegisterManualFolio,
+    db: Session = Depends(get_db),
+):
+    """
+    Registra un folio usado en un libro de cancelación creado a mano
+    directamente en SIIGO (no por este sistema), para que el contador
+    automático (ver generate_cancellation_entry_rows) nunca vuelva a asignar
+    ese mismo número. Se debe llamar DESPUÉS de crear el libro manual en
+    SIIGO, con el número que SIIGO le asignó ahí.
+
+    Si ese (tienda, mes, número) ya está tomado —por otro libro manual o por
+    una corrida automática anterior— responde 409 para que se consulte
+    GET /cancellation_entry/folios y se reintente con el siguiente número
+    disponible.
+    """
+    existing = db.query(CancellationEntryFolio).filter(
+        CancellationEntryFolio.serial_number_report == request.serial_number_report,
+        CancellationEntryFolio.year_month == request.year_month,
+        CancellationEntryFolio.sequence_number == request.sequence_number,
+    ).one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"El folio {existing.document_number} ya está registrado "
+                f"(origen: {existing.source}). Consulta GET /cancellation_entry/folios "
+                "para ver el siguiente número disponible."
+            ),
+        )
+
+    folio = CancellationEntryFolio(
+        serial_number_report=request.serial_number_report,
+        year_month=request.year_month,
+        sequence_number=request.sequence_number,
+        document_number=f"{request.year_month}{str(request.sequence_number).zfill(3)}",
+        emission_date=None,
+        source="manual",
+        note=request.note,
+        created_at=datetime.utcnow(),
+    )
+    db.add(folio)
+    db.commit()
+    db.refresh(folio)
+    return folio
+
+
+CANCELLATION_ENTRY_FILENAME_TEMPLATE = "Asiento_contable_cancelacion_{year}{month:02d}.xlsx"
+
+@router.get("/cancellation_entry")
+def generate_cancellation_entry(request: RequestCancellationEntry, db: Session = Depends(get_db)):
+    """
+    Genera el asiento contable de cancelación (layout plano SIIGO) a partir de
+    los pagos Niubiz activos (payments.inactive = 0) y conciliados
+    (payment_source_match) PENDIENTES de confirmar (canceled = 0) cuyo
+    documento tiene emission_date en [date_from, date_to]. Los pagos
+    inactivos y los matches ya confirmados vía
+    POST /bills/cancellation_book/confirm no se incluyen.
+
+    Reemplaza a queries/repote_cancelacion.sql: esa consulta ahora solo trae
+    los datos reales de cada pago conciliado (sin subconsultas correlacionadas
+    y con fechas parametrizadas); el armado de la fila de resumen por
+    tienda/día, la fila de detalle por documento, la numeración correlativa y
+    las ~185 columnas fijas del layout SIIGO se calculan en
+    services/cancellation_entry.py.
+    """
+    rows = generate_cancellation_entry_rows(
+        db,
+        date_from=request.date_from,
+        date_to=request.date_to,
+        niubiz_lookback_days=request.niubiz_lookback_days,
+        niubiz_lookahead_days=request.niubiz_lookahead_days,
+    )
+
+    if not rows:
+        return {
+            'code':    200,
+            'message': 'No hay pagos Niubiz conciliados en el rango indicado',
+            'rows':    0,
+        }
+
+    filename = CANCELLATION_ENTRY_FILENAME_TEMPLATE.format(
+        year=request.date_from.year, month=request.date_from.month
+    )
+    df = pd.DataFrame(data=rows)
+    df.to_excel(filename, index=False)
+
+    return {
+        'code':    200,
+        'message': 'Asiento contable de cancelación generado',
+        'file':    filename,
+        'rows':    len(rows),
     }
 
 
