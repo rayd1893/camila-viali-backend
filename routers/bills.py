@@ -3,6 +3,7 @@ from requests import request
 from dotenv import load_dotenv
 import re
 from os import getenv
+from pathlib import Path
 import pandas as pd
 from datetime import date, datetime, timedelta
 import pytz
@@ -984,6 +985,50 @@ def generate_cancellation_entry(request: RequestCancellationEntry, db: Session =
         'code':    200,
         'message': 'Asiento contable de cancelación generado',
         'file':    filename,
+        'rows':    len(rows),
+    }
+
+
+_CRUCE_DOCUMENTS_NIUBIZ_SQL = (
+    Path(__file__).resolve().parent.parent / "queries" / "Cruce_documents_niubiz.sql"
+).read_text(encoding="utf-8")
+CRUCE_DOCUMENTS_NIUBIZ_QUERY = text(_CRUCE_DOCUMENTS_NIUBIZ_SQL)
+CRUCE_DOCUMENTS_NIUBIZ_FILENAME = "Cruce_documents_niubiz.xlsx"
+
+@router.get("/cruce_documents_niubiz")
+def generate_cruce_documents_niubiz(dates: RequestReport, db: Session = Depends(get_db)):
+    """
+    Reporte de diagnóstico: cruza documentos (excepto notas de crédito) con
+    sus pagos y, si ya fueron conciliados, con la operación Niubiz y el
+    match_type correspondiente (ver queries/Cruce_documents_niubiz.sql). Los
+    pagos aún sin conciliar también aparecen, con las columnas de Niubiz en
+    NULL, para poder detectar a simple vista qué quedó sin cruzar en el
+    rango de emission_date indicado.
+    """
+    rows = db.execute(
+        CRUCE_DOCUMENTS_NIUBIZ_QUERY,
+        {"date_from": dates.start_date, "date_to": dates.end_date},
+    ).mappings().all()
+
+    if not rows:
+        return {
+            'code':    200,
+            'message': 'No hay documentos en el rango indicado',
+            'rows':    0,
+        }
+
+    df = pd.DataFrame(data=[dict(r) for r in rows])
+    # id_operacion es BigInteger: forzarlo a texto evita que Excel lo muestre
+    # en notacion cientifica o le recorte precision (igual que n_referencia
+    # en process_niubiz_file). Las filas sin match quedan en "" (NULL por el
+    # LEFT JOIN a operaciones_niubiz).
+    df["id_operacion"] = df["id_operacion"].apply(lambda v: str(int(v)) if pd.notna(v) else "")
+    df.to_excel(CRUCE_DOCUMENTS_NIUBIZ_FILENAME, index=False)
+
+    return {
+        'code':    200,
+        'message': 'Reporte de cruce generado',
+        'file':    CRUCE_DOCUMENTS_NIUBIZ_FILENAME,
         'rows':    len(rows),
     }
 
