@@ -3,10 +3,19 @@ from dependencies import verify_token
 from routers import users, roles, bills
 from  models.engine.connection import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 Base.metadata.create_all(bind= engine)
 
+Path("static/avatars").mkdir(parents=True, exist_ok=True)
+
 app = FastAPI(dependencies=[Depends(verify_token)])
+
+# Montado fuera de app.include_router: los archivos estaticos (avatares) se
+# sirven sin pasar por verify_token, igual que cualquier imagen de perfil
+# publica referenciada desde un <img src="...">.
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 origins = [
     "http://localhost",

@@ -12,6 +12,7 @@ class User(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     status = Column(Boolean, nullable=False)
+    avatar = Column(String(255), nullable=True)
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
     role = relationship("Role", back_populates="users")
 

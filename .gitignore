@@ -25,6 +25,10 @@ ENV/
 *.csv
 reporte_asiento_cancelacion.txt
 
+# --- Archivos subidos por usuarios (avatares) ---
+static/avatars/*
+!static/avatars/.gitkeep
+
 # --- Frontend (Angular, cuando se inicie) ---
 node_modules/
 .angular/
