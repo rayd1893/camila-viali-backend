@@ -36,7 +36,7 @@ La lista completa está en `.env.example`. Las principales:
 
 ```env
 SECRET_TOKEN=<secreto del header X-Token>
-SECRET_KEY=<clave para firmar el JWT>
+SECRET_KEY=<clave para firmar el JWT, mínimo 32 caracteres>  # python -c "import secrets; print(secrets.token_urlsafe(64))"
 
 MYSQL_USER=root
 MYSQL_PASSWORD=<password>
@@ -129,7 +129,9 @@ app/
 
 1. Hacer `POST /users/login` con `username` y `password` (y el header `X-Token`).
 2. Enviar el JWT retornado en el header `Authorization: Bearer <jwt>` en las rutas protegidas, además del `X-Token`.
-3. El JWT expira a los 90 minutos; no hay endpoint de renovación.
+3. El JWT se firma con `SECRET_KEY` y expira a los 90 minutos; no hay endpoint de renovación. Un token vencido o inválido responde 401.
+
+La API no arranca si `SECRET_KEY` falta o tiene menos de 32 caracteres. Cambiarla invalida todas las sesiones abiertas.
 
 ## Reportes
 

@@ -355,16 +355,15 @@ La carpeta `services/` solo cubre el asiento de cancelación y el envío de corr
 Implementado:
 
 - Header `X-Token` obligatorio en toda la API (secreto compartido vía variable de entorno), aplicado globalmente como dependencia de la app.
-- Autenticación por JWT (`PyJWT`), firmado con clave simétrica, expiración de 90 minutos.
+- Autenticación por JWT (`PyJWT`, HS256) firmado con `SECRET_KEY` del entorno, expiración de 90 minutos. La API no arranca si `SECRET_KEY` falta o tiene menos de 32 caracteres.
+- Un token vencido, con firma incorrecta, malformado o sin `exp`/`iat`/`sub` responde 401 con `WWW-Authenticate: Bearer`.
 - Password hasheado con `bcrypt`.
 - Autorización fina por permiso (`PermissionChecker`) a nivel de endpoint.
 - CORS restringido a orígenes explícitos (`localhost`, `localhost:5173` habilitado para el servidor de desarrollo de Vite). Expone `Content-Disposition` para las descargas de Excel.
 
 Pendiente / a reforzar antes de exponer un panel web:
 
-- Mover el secreto del JWT (`key='secret'`) a variable de entorno (`SECRET_KEY` ya existe en `.env` pero no se está usando en el código de firma).
 - Aplicar `PermissionChecker` de forma consistente en **todos** los endpoints de `bills.py` (hoy no todos lo usan).
-- Manejo de expiración/errores de JWT con respuestas controladas (hoy `jwt.decode` puede lanzar excepción no controlada).
 - Rate limiting en `/users/login`.
 - No commitear archivos generados con datos reales (Excel/CSV de reportes) — ver sección 14.
 
@@ -497,7 +496,7 @@ Las dependencias de Python están fijadas en `requirements.txt` (`pip install -r
 3. ~~`__pycache__/*.pyc` versionados en git~~ — resuelto: se quitaron del repositorio y `.gitignore` los excluye.
 4. CRUD incompleto de usuarios (editar, desactivar) y de roles/permisos (editar, eliminar, asignar permisos).
 5. `GET /users/{username}` es un stub sin implementar.
-6. Clave de firma JWT hardcodeada (`'secret'`) en vez de usar `SECRET_KEY` del `.env`.
+6. ~~Clave de firma JWT hardcodeada (`'secret'`)~~ — resuelto: se firma con `SECRET_KEY` del entorno.
 7. Sin tests automatizados.
 8. `PermissionChecker` no aplicado de forma uniforme en todos los endpoints sensibles de `bills.py`.
 9. No existe endpoint para editar/eliminar documentos, pagos o configuraciones (clients, centers, subcenters, taxes) desde la API — hoy se insertan solo vía sincronización con Bsale.
@@ -511,8 +510,8 @@ Las dependencias de Python están fijadas en `requirements.txt` (`pip install -r
 
 1. ~~Congelar `requirements.txt`~~ (hecho).
 2. Sacar del repo y del historial los archivos de datos reales (Excel/CSV). El `__pycache__` ya se quitó del repositorio.
-3. Mover el secreto JWT a `SECRET_KEY` de entorno.
-4. Manejo de errores controlado en `get_current_user`.
+3. ~~Mover el secreto JWT a `SECRET_KEY` de entorno~~ (hecho).
+4. ~~Manejo de errores controlado en `get_current_user`~~ (hecho).
 
 ## BLOQUE 2 — Completar API de soporte al panel
 

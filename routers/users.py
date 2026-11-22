@@ -15,10 +15,31 @@ from schemas.user import (
     ForgotPasswordRequest, ResetPasswordRequest, AvatarOut,
 )
 from services.email import send_password_reset_email
+from dotenv import load_dotenv
 import bcrypt
 import datetime
 import jwt
 import pytz
+
+load_dotenv()
+
+# Clave para firmar y verificar los JWT (HS256). Se exige al arrancar: sin
+# ella cualquiera podría generar tokens válidos, así que es mejor que la API
+# no levante a que use una clave por defecto.
+JWT_SECRET_KEY = getenv("SECRET_KEY")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_MINUTES = 90
+JWT_MIN_KEY_LENGTH = 32
+
+if not JWT_SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY no está definida en el entorno. Genera una con: "
+        "python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
+if len(JWT_SECRET_KEY) < JWT_MIN_KEY_LENGTH:
+    raise RuntimeError(
+        f"SECRET_KEY debe tener al menos {JWT_MIN_KEY_LENGTH} caracteres para firmar JWT con HS256."
+    )
 
 router = APIRouter(
     prefix="/users",
@@ -58,25 +79,45 @@ def authenticate_user(username: str, password: str, db: Session):
     return user
 
 def create_token(user):
-    payload = {'sub': user.username, 'iat': datetime.datetime.now(pytz.timezone('UTC')),
-               'exp': datetime.datetime.now(pytz.timezone('UTC')) + datetime.timedelta(minutes=90)}
-    token = jwt.encode(payload, key='secret')
-    print(payload)
-    return token 
+    now = datetime.datetime.now(pytz.timezone('UTC'))
+    payload = {
+        'sub': user.username,
+        'iat': now,
+        'exp': now + datetime.timedelta(minutes=JWT_EXPIRATION_MINUTES),
+    }
+    return jwt.encode(payload, key=JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
+
+def _unauthorized(detail: str) -> HTTPException:
+    # WWW-Authenticate: Bearer es lo que indica el estándar para un 401 con
+    # token Bearer; el panel solo necesita el status para volver al login.
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def get_current_user(token: str = Depends(oauth_scheme), db: Session = Depends(get_db)):
-    decoded = jwt.decode(token, 'secret', algorithms=['HS256'])
-    username = (decoded['sub'])
-    user = db.query(User).where(User.status == True, 
+    try:
+        decoded = jwt.decode(
+            token,
+            JWT_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["exp", "iat", "sub"]},
+        )
+    except jwt.ExpiredSignatureError:
+        raise _unauthorized('La sesión expiró, vuelve a iniciar sesión')
+    except jwt.InvalidTokenError:
+        # Firma incorrecta, token malformado o sin los claims requeridos.
+        raise _unauthorized('Token inválido')
+
+    username = decoded['sub']
+    user = db.query(User).where(User.status == True,
                                 User.username == username
                                 ).one_or_none()
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail='Invalid credentials'
-        )
+        raise _unauthorized('Invalid credentials')
     
     user.role.permissions
     return user

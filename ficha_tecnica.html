@@ -427,16 +427,15 @@ Breakdown
 <p>Implementado:</p>
 <ul>
 <li>Header <code>X-Token</code> obligatorio en toda la API (secreto compartido vía variable de entorno), aplicado globalmente como dependencia de la app.</li>
-<li>Autenticación por JWT (<code>PyJWT</code>), firmado con clave simétrica, expiración de 90 minutos.</li>
+<li>Autenticación por JWT (<code>PyJWT</code>, HS256) firmado con <code>SECRET_KEY</code> del entorno, expiración de 90 minutos. La API no arranca si <code>SECRET_KEY</code> falta o tiene menos de 32 caracteres.</li>
+<li>Un token vencido, con firma incorrecta, malformado o sin <code>exp</code>/<code>iat</code>/<code>sub</code> responde 401 con <code>WWW-Authenticate: Bearer</code>.</li>
 <li>Password hasheado con <code>bcrypt</code>.</li>
 <li>Autorización fina por permiso (<code>PermissionChecker</code>) a nivel de endpoint.</li>
 <li>CORS restringido a orígenes explícitos (<code>localhost</code>, <code>localhost:5173</code> habilitado para el servidor de desarrollo de Vite). Expone <code>Content-Disposition</code> para las descargas de Excel.</li>
 </ul>
 <p>Pendiente / a reforzar antes de exponer un panel web:</p>
 <ul>
-<li>Mover el secreto del JWT (<code>key='secret'</code>) a variable de entorno (<code>SECRET_KEY</code> ya existe en <code>.env</code> pero no se está usando en el código de firma).</li>
 <li>Aplicar <code>PermissionChecker</code> de forma consistente en <strong>todos</strong> los endpoints de <code>bills.py</code> (hoy no todos lo usan).</li>
-<li>Manejo de expiración/errores de JWT con respuestas controladas (hoy <code>jwt.decode</code> puede lanzar excepción no controlada).</li>
 <li>Rate limiting en <code>/users/login</code>.</li>
 <li>No commitear archivos generados con datos reales (Excel/CSV de reportes) — ver sección 14.</li>
 </ul>
@@ -629,7 +628,7 @@ Breakdown
 <li>~~<code>__pycache__/*.pyc</code> versionados en git~~ — resuelto: se quitaron del repositorio y <code>.gitignore</code> los excluye.</li>
 <li>CRUD incompleto de usuarios (editar, desactivar) y de roles/permisos (editar, eliminar, asignar permisos).</li>
 <li><code>GET /users/{username}</code> es un stub sin implementar.</li>
-<li>Clave de firma JWT hardcodeada (<code>'secret'</code>) en vez de usar <code>SECRET_KEY</code> del <code>.env</code>.</li>
+<li>~~Clave de firma JWT hardcodeada (<code>'secret'</code>)~~ — resuelto: se firma con <code>SECRET_KEY</code> del entorno.</li>
 <li>Sin tests automatizados.</li>
 <li><code>PermissionChecker</code> no aplicado de forma uniforme en todos los endpoints sensibles de <code>bills.py</code>.</li>
 <li>No existe endpoint para editar/eliminar documentos, pagos o configuraciones (clients, centers, subcenters, taxes) desde la API — hoy se insertan solo vía sincronización con Bsale.</li>
@@ -641,8 +640,8 @@ Breakdown
 <ol>
 <li>~~Congelar <code>requirements.txt</code>~~ (hecho).</li>
 <li>Sacar del repo y del historial los archivos de datos reales (Excel/CSV). El <code>__pycache__</code> ya se quitó del repositorio.</li>
-<li>Mover el secreto JWT a <code>SECRET_KEY</code> de entorno.</li>
-<li>Manejo de errores controlado en <code>get_current_user</code>.</li>
+<li>~~Mover el secreto JWT a <code>SECRET_KEY</code> de entorno~~ (hecho).</li>
+<li>~~Manejo de errores controlado en <code>get_current_user</code>~~ (hecho).</li>
 </ol>
 <h2 id="bloque-2-completar-api-de-soporte-al-panel">BLOQUE 2 — Completar API de soporte al panel</h2>
 <ol>
