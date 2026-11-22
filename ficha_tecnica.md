@@ -494,7 +494,7 @@ Las dependencias de Python están fijadas en `requirements.txt` (`pip install -r
 
 1. ~~`requirements.txt` vacío~~ — resuelto: `requirements.txt` con versiones fijadas (ver sección 13).
 2. Archivos generados (reportes Excel/CSV con datos reales de clientes y operaciones) están sueltos en la raíz del repo y sin trackear — **no deben commitearse**; deben excluirse vía `.gitignore` y, de ser necesario, moverse a un storage fuera del repositorio.
-3. `__pycache__/*.pyc` versionados en git — deben ignorarse.
+3. ~~`__pycache__/*.pyc` versionados en git~~ — resuelto: se quitaron del repositorio y `.gitignore` los excluye.
 4. CRUD incompleto de usuarios (editar, desactivar) y de roles/permisos (editar, eliminar, asignar permisos).
 5. `GET /users/{username}` es un stub sin implementar.
 6. Clave de firma JWT hardcodeada (`'secret'`) en vez de usar `SECRET_KEY` del `.env`.
@@ -510,7 +510,7 @@ Las dependencias de Python están fijadas en `requirements.txt` (`pip install -r
 ## BLOQUE 1 — Saneamiento del backend
 
 1. ~~Congelar `requirements.txt`~~ (hecho).
-2. Sacar del repo y del historial los archivos de datos reales (Excel/CSV) y el `__pycache__`.
+2. Sacar del repo y del historial los archivos de datos reales (Excel/CSV). El `__pycache__` ya se quitó del repositorio.
 3. Mover el secreto JWT a `SECRET_KEY` de entorno.
 4. Manejo de errores controlado en `get_current_user`.
 
