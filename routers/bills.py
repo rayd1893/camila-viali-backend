@@ -338,13 +338,14 @@ def process_niubiz_file(file_bytes: bytes, db: Session):
 
 def parse_niubiz_fecha(raw: str) -> datetime | None:
     """
-    Convierte '01-03-2026 10:54' (dd-mm-yyyy HH:MM) a datetime.
+    Convierte '01-03-2026 10:54' o '01/03/2026 10:54' (dd-mm-yyyy HH:MM o
+    dd/mm/yyyy HH:MM, Niubiz envía ambos) a datetime.
     Retorna None si el valor es nulo o no parseable.
     """
     if not raw:
         return None
     try:
-        return datetime.strptime(raw.strip(), "%d-%m-%Y %H:%M")
+        return datetime.strptime(raw.strip().replace("/", "-"), "%d-%m-%Y %H:%M")
     except ValueError:
         log.warning("Fecha Niubiz no parseable: %r", raw)
         return None
@@ -375,7 +376,8 @@ def load_niubiz(
     """
     Carga operaciones_niubiz acotadas al rango [date_from, date_to].
  
-    fecha_y_hora_operacion tiene formato 'dd-mm-yyyy HH:MM' (texto), por lo
+    fecha_y_hora_operacion tiene formato 'dd-mm-yyyy HH:MM' o
+    'dd/mm/yyyy HH:MM' (texto; se normaliza '/' → '-'), por lo
     que el filtro de rango se aplica en Python tras parsear, no en SQL.
     Para evitar cargar todo el histórico se añade un margen de ±1 día al
     rango en el filtro de texto usando STR_TO_DATE, lo cual sirve de pre-
@@ -395,7 +397,7 @@ def load_niubiz(
                 codigo_de_autorizacion
             FROM operaciones_niubiz
             WHERE STR_TO_DATE(
-                      SUBSTRING(fecha_y_hora_operacion, 1, 10),
+                      SUBSTRING(REPLACE(fecha_y_hora_operacion, '/', '-'), 1, 10),
                       '%d-%m-%Y'
                   ) BETWEEN :date_from - INTERVAL 1 DAY
                         AND :date_to   + INTERVAL 1 DAY
@@ -951,7 +953,9 @@ def generate_cancellation_entry(request: RequestCancellationEntry, db: Session =
     (payment_source_match) PENDIENTES de confirmar (canceled = 0) cuyo
     documento tiene emission_date en [date_from, date_to]. Los pagos
     inactivos y los matches ya confirmados vía
-    POST /bills/cancellation_book/confirm no se incluyen.
+    POST /bills/cancellation_book/confirm no se incluyen. También incluye los
+    pagos EFECTIVO activos de esos documentos (comprobante R, cuenta de caja
+    por tienda), que no se cruzan con ninguna otra fuente.
 
     Reemplaza a queries/repote_cancelacion.sql: esa consulta ahora solo trae
     los datos reales de cada pago conciliado (sin subconsultas correlacionadas
@@ -971,7 +975,7 @@ def generate_cancellation_entry(request: RequestCancellationEntry, db: Session =
     if not rows:
         return {
             'code':    200,
-            'message': 'No hay pagos Niubiz conciliados en el rango indicado',
+            'message': 'No hay pagos Niubiz conciliados ni pagos en efectivo en el rango indicado',
             'rows':    0,
         }
 

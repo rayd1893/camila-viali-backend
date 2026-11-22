@@ -4,7 +4,8 @@ Este modulo reemplaza la logica que antes vivia completa en
 ``queries/repote_cancelacion.sql``. La consulta SQL (ver
 ``queries/repote_cancelacion.sql``, ya optimizada: sin subconsultas
 correlacionadas y con fechas parametrizadas) ahora solo devuelve los datos
-reales de cada pago Niubiz conciliado. Todo lo demas -resolucion de tienda,
+reales de cada documento con pagos Niubiz conciliados (importe = suma
+de esos pagos Niubiz, no el total del documento). Todo lo demas -resolucion de tienda,
 armado de la fila de resumen (debito) y de detalle (credito), numeracion
 correlativa y las ~185 columnas fijas que exige el layout de importacion de
 SIIGO- se calcula aqui, en Python, donde es mas facil de leer, probar y
@@ -27,6 +28,7 @@ tienda+mes nunca se repite ni deja huecos sin importar cuántas veces se
 regenere el reporte o en qué orden se registren los folios manuales.
 """
 
+import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -35,6 +37,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models.cancellation_entry_folio import CancellationEntryFolio
+
+log = logging.getLogger(__name__)
 
 _SQL_PATH = Path(__file__).resolve().parent.parent / "queries" / "repote_cancelacion.sql"
 CANCELLATION_ENTRY_QUERY = text(_SQL_PATH.read_text(encoding="utf-8"))
@@ -66,6 +70,7 @@ DEFAULT_STORE_CODE = "L-10"
 DEFAULT_STORE_LABEL = "ECOMMERCE"
 
 NIUBIZ_SUMMARY_NIT = "20341198217"
+CASH_SUMMARY_NIT = "20601348455"
 CREDIT_ACCOUNT = "1201020100"
 DEBIT_ACCOUNT = "1602090100"
 CREDIT_SEQUENCE_DESCRIPTION = "FT BL Y OTROS COMP X COB EN CARTERA MN"
@@ -79,6 +84,25 @@ CREDIT_SEQUENCE_DESCRIPTION = "FT BL Y OTROS COMP X COB EN CARTERA MN"
 COMBINED_SUMMARY_STORE_CODE = "L-10"
 COMBINED_SUMMARY_SUBCENTER = 1
 
+PAYMENT_KIND_NIUBIZ = "NIUBIZ"
+PAYMENT_KIND_CASH = "EFECTIVO"
+
+# EFECTIVO: comprobante tipo R con un codigo propio por tienda, y el debito va
+# a la cuenta de caja de cada tienda (en vez de DEBIT_ACCOUNT de Niubiz). El
+# credito usa la misma CREDIT_ACCOUNT / CREDIT_SEQUENCE_DESCRIPTION que Niubiz.
+# Tienda (token de document_type_name) -> (comprobante, cuenta caja, boutique).
+# La boutique es el nombre que va en la descripcion del debito
+# ("ING. DDMM CANCEFECT. BOUTIQUE").
+CASH_STORE_MAP: list[tuple[str, str, str, str]] = [
+    ("PLAZA NORTE", "R-9",  "1001010400", "PLAZA NORTE"),
+    ("POLO",        "R-13", "1001010600", "EL POLO"),
+    ("CHACARILLA",  "R-21", "1001010800", "CHACARILLA"),
+    ("SAN MIGUEL",  "R-23", "1001010900", "SAN MIGUEL"),
+    ("SALAVERRY",   "R-25", "1001011000", "SALAVERRY"),
+    ("PRIMAVERA",   "R-27", "1001011200", "PRIMAVERA"),
+    ("TRUJILLO",    "R-32", "1001011300", "TRUJILLO"),
+]
+
 
 def resolve_store(document_type_name):
     """Devuelve (codigo de comprobante, etiqueta de tienda) para un tipo de documento."""
@@ -89,8 +113,20 @@ def resolve_store(document_type_name):
     return DEFAULT_STORE_CODE, DEFAULT_STORE_LABEL
 
 
+def resolve_cash_store(document_type_name):
+    """Devuelve (comprobante, cuenta caja, boutique) de EFECTIVO para un tipo
+    de documento, o None si la tienda no tiene caja configurada (ej. ECOMMERCE)."""
+    name = (document_type_name or "").upper()
+    for token, code, account, boutique in CASH_STORE_MAP:
+        if token in name:
+            return code, account, boutique
+    return None
+
+
 def load_cancellation_entry_matches(db, date_from, date_to, niubiz_lookback_days=20, niubiz_lookahead_days=10):
-    """Ejecuta la consulta optimizada y devuelve una fila por pago Niubiz conciliado.
+    """Ejecuta la consulta optimizada y devuelve una fila por documento y medio
+    de pago (``payment_kind``): pagos Niubiz conciliados o pagos EFECTIVO;
+    ``amount`` es la suma de esos pagos.
 
     ``niubiz_lookback_days``/``niubiz_lookahead_days`` amplian el rango de
     busqueda de operaciones Niubiz y pagos respecto al rango de emision de
@@ -131,16 +167,30 @@ def build_cancellation_entry_rows(matches):
     detail_rows = []
     for match in matches:
         cod_serie, document_number = _split_serial_number(match["serial_number"])
-        store_code, store_label = resolve_store(match["document_type_name"])
+        payment_kind = match.get("payment_kind") or PAYMENT_KIND_NIUBIZ
+        if payment_kind == PAYMENT_KIND_CASH:
+            cash_store = resolve_cash_store(match["document_type_name"])
+            if cash_store is None:
+                log.warning(
+                    "Pago EFECTIVO omitido: tienda sin caja configurada (%s, %s)",
+                    match["document_type_name"], match["serial_number"],
+                )
+                continue
+            store_code, debit_account, store_label = cash_store  # store_label = boutique
+        else:
+            store_code, store_label = resolve_store(match["document_type_name"])
+            debit_account = DEBIT_ACCOUNT
         detail_rows.append({
+            "payment_kind": payment_kind,
             "serial_number_report": store_code,
             "store_label": store_label,
+            "debit_account": debit_account,
             "subcenter": _subcenter_from_serial(cod_serie),
             "emission_date": match["emission_date"],
             "expiration_date": match["expiration_date"],
             "number_account": CREDIT_ACCOUNT,
             "credit_or_debit": "C",
-            "total_amount": float(match["total_amount"]),
+            "total_amount": float(match["amount"]),
             "nit": match["nit"],
             "sequence_description": CREDIT_SEQUENCE_DESCRIPTION,
             "serial_number_siigo": match.get("serial_number_siigo") or "",
@@ -161,15 +211,17 @@ def build_cancellation_entry_rows(matches):
             key = (row["emission_date"], row["serial_number_report"], row["subcenter"])
             group_subcenter = row["subcenter"]
         group = groups.setdefault(key, {
+            "payment_kind": row["payment_kind"],
             "serial_number_report": row["serial_number_report"],
             "store_label": row["store_label"],
             "subcenter": group_subcenter,
             "emission_date": row["emission_date"],
             "expiration_date": None,
-            "number_account": DEBIT_ACCOUNT,
+            "number_account": row["debit_account"],
             "credit_or_debit": "D",
             "total_amount": 0.0,
-            "nit": NIUBIZ_SUMMARY_NIT,
+            # NIT del resumen (debito): distinto para Niubiz y EFECTIVO.
+            "nit": CASH_SUMMARY_NIT if row["payment_kind"] == PAYMENT_KIND_CASH else NIUBIZ_SUMMARY_NIT,
             "serial_number_siigo": "",
             "document_number": "0",
             "exchange_rate": row["exchange_rate"],
@@ -183,10 +235,23 @@ def build_cancellation_entry_rows(matches):
 
     summary_rows = []
     for group in groups.values():
-        lote_suffix = str(group["max_n_lote"])[-4:] if group["max_n_lote"] is not None else "0000"
         summary_row = dict(group)
-        summary_row["sequence_description"] = "LOTE {} NIUBIZ {}".format(lote_suffix, group["store_label"])
         summary_row.pop("max_n_lote", None)
+        if group["payment_kind"] == PAYMENT_KIND_CASH:
+            # EFECTIVO: "ING. DDMM CANCEFECT. BOUTIQUE" con dia/mes de emision
+            # (ej. "ING. 0310 CANCEFECT. PLAZA NORTE").
+            summary_row["sequence_description"] = "ING. {} CANCEFECT. {}".format(
+                group["emission_date"].strftime("%d%m"), group["store_label"]
+            )
+            summary_rows.append(summary_row)
+            continue
+        # Sin lote Niubiz (NULL o 0): se usa MMDD de la emisión del documento
+        # (ej. 0902, 0915) para que el lote no quede como "0000".
+        if group["max_n_lote"]:
+            lote_suffix = str(group["max_n_lote"])[-4:]
+        else:
+            lote_suffix = group["emission_date"].strftime("%m%d")
+        summary_row["sequence_description"] = "LOTE {} NIUBIZ {}".format(lote_suffix, group["store_label"])
         summary_rows.append(summary_row)
 
     return summary_rows + detail_rows
@@ -256,12 +321,15 @@ def assign_document_numbers(db: Session, rows: list[dict]) -> list[dict]:
     Una sola consulta/inserción por (tienda, fecha) distinta, aunque esa
     combinación aparezca en varias filas (resumen + detalle comparten fecha).
     """
-    cache: dict[tuple, str] = {}
+    # Los folios nuevos se reservan en orden (tienda, fecha), no en el orden de
+    # las filas: la consulta ordena por document_type_name, y una misma tienda
+    # tiene varios tipos (BOLETA/FACTURA) que comparten comprobante; si no, un
+    # dia que solo tiene facturas recibiria un folio posterior al de dias
+    # siguientes (ej. dia 5 -> 2610018).
+    keys = sorted({(row["serial_number_report"], row["emission_date"]) for row in rows})
+    cache: dict[tuple, str] = {key: get_or_create_document_number(db, *key) for key in keys}
     for row in rows:
-        key = (row["serial_number_report"], row["emission_date"])
-        if key not in cache:
-            cache[key] = get_or_create_document_number(db, *key)
-        row["document_sequence_number"] = cache[key]
+        row["document_sequence_number"] = cache[(row["serial_number_report"], row["emission_date"])]
     return rows
 
 
