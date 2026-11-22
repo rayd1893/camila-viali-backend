@@ -27,7 +27,7 @@ router = APIRouter(
 )
 
 PASSWORD_RESET_TOKEN_TTL_MINUTES = 30
-FRONTEND_RESET_PASSWORD_URL = getenv("FRONTEND_URL", "http://localhost:4200") + "/reset-password"
+FRONTEND_RESET_PASSWORD_URL = getenv("FRONTEND_URL", "http://localhost:5173") + "/reset-password"
 
 AVATAR_DIR = Path("static/avatars")
 AVATAR_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}

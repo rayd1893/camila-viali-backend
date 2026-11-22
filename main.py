@@ -20,7 +20,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 origins = [
     "http://localhost",
     "http://localhost:8000",
-    "http://localhost:4200",
+    "http://localhost:5173",  # Panel React + Vite (vite dev)
 ]
 
 app.add_middleware(
@@ -29,6 +29,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Permite que el frontend lea el nombre del archivo en las descargas de
+    # Excel (?format=xlsx); sin esto el navegador oculta el header.
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(users.router)

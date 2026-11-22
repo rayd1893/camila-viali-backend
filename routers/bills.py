@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, status
 from requests import request
 from dotenv import load_dotenv
+from io import BytesIO
+import calendar
 import re
 from os import getenv
 from pathlib import Path
@@ -32,7 +34,7 @@ from models.payment_source_match import PaymentSourceMatch
 from models.cancellation_entry_folio import CancellationEntryFolio
 from schemas.bill import Clients, Coins, DocumentTypes, Documents, Returns, RequestDocument, RequestExchange, RequestReport, RequestPayment, Exchanges, Approvals, Centers, Subcenters, Payments, PaymentTypes, OperacionesNiubiz, RequestPaymentMatch, RequestCancellationBook, CancelCancellationBook, RequestCancellationEntry, CancellationEntryFolioOut, RequestRegisterManualFolio
 from services.cancellation_entry import generate_cancellation_entry_rows
-from typing import List
+from typing import List, Literal
 
 load_dotenv()
 
@@ -90,6 +92,60 @@ def convert_float_to_string(ammount, decimal):
 
 def convert_date_to_timestamp(date:str):
   return int(datetime.strptime(date, '%Y-%m-%d').timestamp())
+
+def date_range_to_bsale_timestamps(start: date, end: date) -> tuple[int, int]:
+  """
+  Convierte un rango de fechas (ambos extremos inclusive) al par de unix
+  timestamps que espera el filtro `emissiondaterange` de Bsale.
+
+  Bsale guarda emissionDate como la medianoche local de la empresa
+  (America/Lima = 05:00 UTC). Tomar el día completo en UTC
+  [00:00:00, 23:59:59] contiene esa medianoche para cualquier zona horaria
+  con desfase negativo, y no depende de la zona horaria del servidor.
+  """
+  start_ts = calendar.timegm(start.timetuple())
+  end_ts = calendar.timegm(end.timetuple()) + 24 * 60 * 60 - 1
+  return start_ts, end_ts
+
+
+# --- Respuesta de reportes: JSON (por defecto) o archivo Excel descargable ---
+
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+ReportFormat = Literal["json", "xlsx"]
+
+def report_format_query(
+    report_format: ReportFormat = Query(
+        "json",
+        alias="format",
+        description="`json` devuelve los datos; `xlsx` devuelve el Excel como descarga.",
+    ),
+) -> ReportFormat:
+  return report_format
+
+def validate_date_range(date_from: date, date_to: date) -> None:
+  if date_from > date_to:
+    raise HTTPException(
+      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+      detail="La fecha inicial no puede ser posterior a la fecha final",
+    )
+
+def xlsx_response(content: bytes, filename: str) -> Response:
+  """Devuelve el Excel en memoria como descarga; no se escribe nada en disco."""
+  return Response(
+    content=content,
+    media_type=XLSX_MEDIA_TYPE,
+    headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+  )
+
+def dataframe_to_xlsx_response(df: pd.DataFrame, filename: str) -> Response:
+  buffer = BytesIO()
+  df.to_excel(buffer, index=False)
+  return xlsx_response(buffer.getvalue(), filename)
+
+def empty_report_for_xlsx(message: str) -> HTTPException:
+  # Con format=xlsx el cliente espera un archivo; sin filas no hay nada que
+  # descargar, así que se responde 404 con el motivo en "detail".
+  return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
 
 def get_client(id_client: int, db: Session):
   client = db.query(Client).where(Client.id == id_client).one_or_none()
@@ -762,22 +818,27 @@ async def upload_niubiz(file: UploadFile = File(...), db: Session = Depends(get_
     }
  
 
-CANCELLATION_BOOK_FILENAME = "Asiento_contable_cancelacion.xlsx"
+CANCELLATION_BOOK_FILENAME_TEMPLATE = "Asiento_contable_cancelacion_{date_from}_{date_to}.xlsx"
+CANCELLATION_BOOK_EMPTY_MESSAGE = 'No hay registros pendientes de confirmar en el rango indicado'
 
 @router.get("/cancellation_book")
 def generate_cancellation_book(
-    request: RequestCancellationBook,
+    request: RequestCancellationBook = Depends(),
+    report_format: ReportFormat = Depends(report_format_query),
     db: Session = Depends(get_db),
 ):
     """
     Genera el asiento contable de cancelación: cruce payments vs operaciones
     Niubiz (payment_source_match) aún no confirmados, filtrado por
-    payments.recordDate en [date_from, date_to].
+    payments.recordDate en [date_from, date_to] (query params).
 
-    Este endpoint NO marca nada. Devuelve el Excel para revisión manual y
-    la lista de ids de payment_source_match incluidos, que luego deben
-    enviarse a POST /bills/cancellation_book/confirm para marcarlos.
+    Este endpoint NO marca nada. Con `format=json` devuelve las filas y la
+    lista de ids de payment_source_match incluidos; con `format=xlsx`
+    devuelve el Excel para revisión manual (la columna id_match tiene los
+    mismos ids). Esos ids luego se envían a
+    POST /bills/cancellation_book/confirm para marcarlos.
     """
+    validate_date_range(request.date_from, request.date_to)
     rows = db.execute(
         text("""
             SELECT
@@ -812,23 +873,29 @@ def generate_cancellation_book(
     ).mappings().all()
 
     if not rows:
+        if report_format == "xlsx":
+            raise empty_report_for_xlsx(CANCELLATION_BOOK_EMPTY_MESSAGE)
         return {
             'code':    200,
-            'message': 'No hay registros pendientes de confirmar en el rango indicado',
+            'message': CANCELLATION_BOOK_EMPTY_MESSAGE,
             'ids':     [],
+            'rows':    [],
         }
 
     report = [dict(r) for r in rows]
     ids = [r["id_match"] for r in report]
 
-    df = pd.DataFrame(data=report)
-    df.to_excel(CANCELLATION_BOOK_FILENAME, index=False)
+    if report_format == "xlsx":
+        filename = CANCELLATION_BOOK_FILENAME_TEMPLATE.format(
+            date_from=request.date_from, date_to=request.date_to
+        )
+        return dataframe_to_xlsx_response(pd.DataFrame(data=report), filename)
 
     return {
         'code':    200,
-        'message': 'Asiento contable de cancelación generado. Revisar el Excel y luego confirmar enviando "ids" a /bills/cancellation_book/confirm.',
-        'file':    CANCELLATION_BOOK_FILENAME,
+        'message': 'Asiento contable de cancelación generado. Revisar y luego confirmar enviando "ids" a /bills/cancellation_book/confirm.',
         'ids':     ids,
+        'rows':    report,
     }
 
 
@@ -943,11 +1010,21 @@ def register_manual_cancellation_entry_folio(
     return folio
 
 
-CANCELLATION_ENTRY_FILENAME_TEMPLATE = "Asiento_contable_cancelacion_{year}{month:02d}.xlsx"
+CANCELLATION_ENTRY_FILENAME_TEMPLATE = "Asiento_contable_cancelacion_SIIGO_{date_from}_{date_to}.xlsx"
+CANCELLATION_ENTRY_EMPTY_MESSAGE = 'No hay pagos Niubiz conciliados ni pagos en efectivo en el rango indicado'
 
 @router.get("/cancellation_entry")
-def generate_cancellation_entry(request: RequestCancellationEntry, db: Session = Depends(get_db)):
+def generate_cancellation_entry(
+    request: RequestCancellationEntry = Depends(),
+    report_format: ReportFormat = Depends(report_format_query),
+    db: Session = Depends(get_db),
+):
     """
+    Parámetros por query string: date_from, date_to y opcionalmente
+    niubiz_lookback_days, niubiz_lookahead_days y format (json | xlsx).
+    Regenerarlo (por ejemplo, ver en JSON y luego descargar el Excel) no
+    consume folios nuevos: el folio se reutiliza por tienda + fecha de emisión.
+
     Genera el asiento contable de cancelación (layout plano SIIGO) a partir de
     los pagos Niubiz activos (payments.inactive = 0) y conciliados
     (payment_source_match) PENDIENTES de confirmar (canceled = 0) cuyo
@@ -964,6 +1041,7 @@ def generate_cancellation_entry(request: RequestCancellationEntry, db: Session =
     las ~185 columnas fijas del layout SIIGO se calculan en
     services/cancellation_entry.py.
     """
+    validate_date_range(request.date_from, request.date_to)
     rows = generate_cancellation_entry_rows(
         db,
         date_from=request.date_from,
@@ -973,23 +1051,26 @@ def generate_cancellation_entry(request: RequestCancellationEntry, db: Session =
     )
 
     if not rows:
+        if report_format == "xlsx":
+            raise empty_report_for_xlsx(CANCELLATION_ENTRY_EMPTY_MESSAGE)
         return {
             'code':    200,
-            'message': 'No hay pagos Niubiz conciliados ni pagos en efectivo en el rango indicado',
-            'rows':    0,
+            'message': CANCELLATION_ENTRY_EMPTY_MESSAGE,
+            'total':   0,
+            'rows':    [],
         }
 
-    filename = CANCELLATION_ENTRY_FILENAME_TEMPLATE.format(
-        year=request.date_from.year, month=request.date_from.month
-    )
-    df = pd.DataFrame(data=rows)
-    df.to_excel(filename, index=False)
+    if report_format == "xlsx":
+        filename = CANCELLATION_ENTRY_FILENAME_TEMPLATE.format(
+            date_from=request.date_from, date_to=request.date_to
+        )
+        return dataframe_to_xlsx_response(pd.DataFrame(data=rows), filename)
 
     return {
         'code':    200,
         'message': 'Asiento contable de cancelación generado',
-        'file':    filename,
-        'rows':    len(rows),
+        'total':   len(rows),
+        'rows':    rows,
     }
 
 
@@ -997,11 +1078,18 @@ _CRUCE_DOCUMENTS_NIUBIZ_SQL = (
     Path(__file__).resolve().parent.parent / "queries" / "Cruce_documents_niubiz.sql"
 ).read_text(encoding="utf-8")
 CRUCE_DOCUMENTS_NIUBIZ_QUERY = text(_CRUCE_DOCUMENTS_NIUBIZ_SQL)
-CRUCE_DOCUMENTS_NIUBIZ_FILENAME = "Cruce_documents_niubiz.xlsx"
+CRUCE_DOCUMENTS_NIUBIZ_FILENAME_TEMPLATE = "Cruce_documents_niubiz_{start_date}_{end_date}.xlsx"
+CRUCE_DOCUMENTS_NIUBIZ_EMPTY_MESSAGE = 'No hay documentos en el rango indicado'
 
 @router.get("/cruce_documents_niubiz")
-def generate_cruce_documents_niubiz(dates: RequestReport, db: Session = Depends(get_db)):
+def generate_cruce_documents_niubiz(
+    dates: RequestReport = Depends(),
+    report_format: ReportFormat = Depends(report_format_query),
+    db: Session = Depends(get_db),
+):
     """
+    Parámetros por query string: start_date, end_date y format (json | xlsx).
+
     Reporte de diagnóstico: cruza documentos (excepto notas de crédito) con
     sus pagos y, si ya fueron conciliados, con la operación Niubiz y el
     match_type correspondiente (ver queries/Cruce_documents_niubiz.sql). Los
@@ -1009,31 +1097,45 @@ def generate_cruce_documents_niubiz(dates: RequestReport, db: Session = Depends(
     NULL, para poder detectar a simple vista qué quedó sin cruzar en el
     rango de emission_date indicado.
     """
+    validate_date_range(dates.start_date, dates.end_date)
     rows = db.execute(
         CRUCE_DOCUMENTS_NIUBIZ_QUERY,
         {"date_from": dates.start_date, "date_to": dates.end_date},
     ).mappings().all()
 
     if not rows:
+        if report_format == "xlsx":
+            raise empty_report_for_xlsx(CRUCE_DOCUMENTS_NIUBIZ_EMPTY_MESSAGE)
         return {
             'code':    200,
-            'message': 'No hay documentos en el rango indicado',
-            'rows':    0,
+            'message': CRUCE_DOCUMENTS_NIUBIZ_EMPTY_MESSAGE,
+            'total':   0,
+            'rows':    [],
         }
 
     df = pd.DataFrame(data=[dict(r) for r in rows])
     # id_operacion es BigInteger: forzarlo a texto evita que Excel lo muestre
     # en notacion cientifica o le recorte precision (igual que n_referencia
-    # en process_niubiz_file). Las filas sin match quedan en "" (NULL por el
+    # en process_niubiz_file), y que JavaScript lo redondee en el JSON (supera
+    # Number.MAX_SAFE_INTEGER). Las filas sin match quedan en "" (NULL por el
     # LEFT JOIN a operaciones_niubiz).
     df["id_operacion"] = df["id_operacion"].apply(lambda v: str(int(v)) if pd.notna(v) else "")
-    df.to_excel(CRUCE_DOCUMENTS_NIUBIZ_FILENAME, index=False)
+
+    if report_format == "xlsx":
+        filename = CRUCE_DOCUMENTS_NIUBIZ_FILENAME_TEMPLATE.format(
+            start_date=dates.start_date, end_date=dates.end_date
+        )
+        return dataframe_to_xlsx_response(df, filename)
+
+    report = [dict(r) for r in rows]
+    for row, id_operacion in zip(report, df["id_operacion"]):
+        row["id_operacion"] = id_operacion
 
     return {
         'code':    200,
         'message': 'Reporte de cruce generado',
-        'file':    CRUCE_DOCUMENTS_NIUBIZ_FILENAME,
-        'rows':    len(rows),
+        'total':   len(report),
+        'rows':    report,
     }
 
 
@@ -1152,10 +1254,17 @@ def insert_exchange(request: RequestExchange, db: Session = Depends(get_db)):
   return result
     
 
-@router.get("/extract_data")
+@router.post("/extract_data")
 def find_documents(requestDocument: RequestDocument, db: Session = Depends(get_db)):
-  start = requestDocument.emission_date_start
-  end = requestDocument.emission_date_end
+  """
+  Sincroniza desde Bsale los documentos emitidos entre emission_date_start y
+  emission_date_end (fechas YYYY-MM-DD, ambas inclusive). Es POST porque
+  escribe en la base de datos.
+  """
+  validate_date_range(requestDocument.emission_date_start, requestDocument.emission_date_end)
+  start, end = date_range_to_bsale_timestamps(
+    requestDocument.emission_date_start, requestDocument.emission_date_end
+  )
   i = 0
   offset = 0
   total = 0
@@ -1301,9 +1410,17 @@ def find_documents(requestDocument: RequestDocument, db: Session = Depends(get_d
     }
   return result
 
+SALES_BOOK_FILENAME_TEMPLATE = "Libro_ventas_{start_date}_{end_date}.xlsx"
+
 @router.get("/sales_book")
-def generate_sales_book(dates: RequestReport, db: Session = Depends(get_db)):
-  documents = db.query(Document).where(Document.emission_date >= dates.start_date, Document.emission_date <= dates.end_date).all()
+def generate_sales_book(
+  dates: RequestReport = Depends(),
+  report_format: ReportFormat = Depends(report_format_query),
+  db: Session = Depends(get_db),
+):
+  """Parámetros por query string: start_date, end_date y format (json | xlsx)."""
+  validate_date_range(dates.start_date, dates.end_date)
+  documents =db.query(Document).where(Document.emission_date >= dates.start_date, Document.emission_date <= dates.end_date).all()
   report = []
   for document in documents:
     data = {}
@@ -1361,13 +1478,24 @@ def generate_sales_book(dates: RequestReport, db: Session = Depends(get_db)):
       data['Inafecto'] = 0
       data['Total'] = 0
     report.append(data)
-  df = pd.DataFrame(data=report)
-  df.to_excel('report.xlsx', index=False)
+  if report_format == "xlsx":
+    if not report:
+      raise empty_report_for_xlsx('No hay documentos en el rango indicado')
+    filename = SALES_BOOK_FILENAME_TEMPLATE.format(start_date=dates.start_date, end_date=dates.end_date)
+    return dataframe_to_xlsx_response(pd.DataFrame(data=report), filename)
   return report
 
+BOOK_ENTRY_FILENAME_TEMPLATE = "Asiento_contable_{start_date}_{end_date}.xlsx"
+
 @router.get("/book_entry")
-def generate_book_entry(dates: RequestReport, db: Session = Depends(get_db)):
-  documents = db.query(Document).where(Document.emission_date >= dates.start_date, Document.emission_date <= dates.end_date).all()
+def generate_book_entry(
+  dates: RequestReport = Depends(),
+  report_format: ReportFormat = Depends(report_format_query),
+  db: Session = Depends(get_db),
+):
+  """Parámetros por query string: start_date, end_date y format (json | xlsx)."""
+  validate_date_range(dates.start_date, dates.end_date)
+  documents =db.query(Document).where(Document.emission_date >= dates.start_date, Document.emission_date <= dates.end_date).all()
   report = []
   igv = 0.18
   for document in documents:
@@ -1631,6 +1759,10 @@ def generate_book_entry(dates: RequestReport, db: Session = Depends(get_db)):
       row['08996-VALOR DEL ANTICIPO5 + IGV'] = ""
       row['08975-REVALUADO CON EFECTO TRIBUTARIO (S/N)'] = ""
       report.append(row)
+  if report_format == "json":
+    return report
+  if not report:
+    raise empty_report_for_xlsx('No hay documentos en el rango indicado')
   df = pd.DataFrame(data=report)
   wb = Workbook()
   ws = wb.active
@@ -1660,6 +1792,7 @@ def generate_book_entry(dates: RequestReport, db: Session = Depends(get_db)):
     ws.append(r)
   ws.cell(row=5, column=180).font = ft
   ws.cell(row=5, column=180).fill = fill
-  wb.save("Asiento_contable_v2.xlsx")
-  #df.to_excel('Asiento_contable.xlsx', index=False)
-  return report
+  buffer = BytesIO()
+  wb.save(buffer)
+  filename = BOOK_ENTRY_FILENAME_TEMPLATE.format(start_date=dates.start_date, end_date=dates.end_date)
+  return xlsx_response(buffer.getvalue(), filename)

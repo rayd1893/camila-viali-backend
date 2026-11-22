@@ -1,0 +1,29 @@
+# Dependencias del backend, con las versiones con que se desarrolló y probó
+# (Python 3.10.11). Instalar con: pip install -r requirements.txt
+#
+# En Linux, mysqlclient necesita compilarse; antes instalar:
+#   sudo apt install build-essential pkg-config python3-dev default-libmysqlclient-dev
+
+# API
+fastapi==0.110.1
+uvicorn==0.29.0
+pydantic==2.11.7
+python-multipart==0.0.32  # UploadFile (avatares y Excel de Niubiz)
+
+# Base de datos
+SQLAlchemy==2.0.29
+mysqlclient==2.2.4
+
+# Reportes y lectura de Excel
+pandas==2.2.2
+numpy==1.26.4
+openpyxl==3.1.2
+
+# Autenticación
+PyJWT==2.8.0
+bcrypt==4.1.2
+
+# Integraciones y utilidades
+requests==2.32.4
+python-dotenv==1.0.1
+pytz==2024.1

@@ -104,8 +104,8 @@
 </ul>
 <p><strong>Stack tecnológico planeado (frontend):</strong></p>
 <ul>
-<li>Angular</li>
-<li>TypeScript</li>
+<li>React + Vite (SPA)</li>
+<li>TypeScript estricto</li>
 <li>Tailwind CSS</li>
 </ul>
 <blockquote>
@@ -120,7 +120,7 @@
 <li>Generar reportes contables (libro de ventas, asiento contable, asiento de cancelación) en formato Excel para ser cargados al sistema contable (SIIGO).</li>
 <li>Mantener un sistema de usuarios internos con roles y permisos para controlar quién puede ejecutar cada proceso.</li>
 </ul>
-<p>Hoy esta lógica vive únicamente como una API (FastAPI) que se opera vía llamadas HTTP/Postman o procesos batch. El objetivo de la siguiente fase es exponer esa misma lógica a través de un panel administrativo web (Angular) para que el equipo contable/financiero no dependa de llamar la API manualmente.</p>
+<p>Hoy esta lógica vive únicamente como una API (FastAPI) que se opera vía llamadas HTTP/Postman o procesos batch. El objetivo de la siguiente fase es exponer esa misma lógica a través de un panel administrativo web (React + Vite) para que el equipo contable/financiero no dependa de llamar la API manualmente.</p>
 <hr />
 <h1 id="3-objetivo-del-proyecto">3. Objetivo del proyecto</h1>
 <ol>
@@ -129,7 +129,7 @@
 <li>Permitir revisar y confirmar manualmente el "libro de cancelación" antes de darlo por cerrado.</li>
 <li>Generar reportes contables (libro de ventas, asiento contable) listos para el área de contabilidad.</li>
 <li>Administrar usuarios internos, roles y permisos.</li>
-<li>Construir un panel web (Angular) que permita ejecutar y monitorear todos estos procesos sin usar la API directamente.</li>
+<li>Construir un panel web (React + Vite) que permita ejecutar y monitorear todos estos procesos sin usar la API directamente.</li>
 </ol>
 <hr />
 <h1 id="4-evento-central-del-sistema">4. Evento central del sistema</h1>
@@ -222,8 +222,8 @@ Contabilidad recibe los archivos listos para SIIGO
 <tbody>
 <tr>
 <td><code>/bills/extract_data</code></td>
-<td>GET</td>
-<td>Sincroniza documentos (boletas/facturas/NC), clientes, monedas y desgloses de impuestos desde Bsale hacia la BD local, para un rango de fechas de emisión.</td>
+<td>POST</td>
+<td>Sincroniza documentos (boletas/facturas/NC), clientes, monedas y desgloses de impuestos desde Bsale hacia la BD local, para un rango de fechas de emisión. Body: <code>emission_date_start</code> y <code>emission_date_end</code> (<code>YYYY-MM-DD</code>, inclusive).</td>
 </tr>
 <tr>
 <td><code>/bills/insert_payment_types</code></td>
@@ -272,6 +272,7 @@ Contabilidad recibe los archivos listos para SIIGO
 </tr>
 </tbody>
 </table>
+<p>Los reportes GET (<code>cancellation_book</code>, <code>cancellation_entry</code>, <code>cruce_documents_niubiz</code>, <code>sales_book</code>, <code>book_entry</code>) reciben las fechas como query params y aceptan <code>format=json</code> (por defecto) o <code>format=xlsx</code>, que devuelve el Excel como descarga (<code>Content-Disposition: attachment</code>). Con <code>format=xlsx</code> y sin filas responden 404. Ningún reporte se escribe en el disco del servidor.</p>
 <p>Reglas de negocio relevantes ya implementadas:</p>
 <ul>
 <li>El matching prioriza coincidencias exactas por voucher/código de autorización, luego por tiempo exacto, luego por tolerancia de tiempo, luego por fecha (fallback), evitando que una operación Niubiz se use dos veces.</li>
@@ -420,7 +421,7 @@ Breakdown
     ├── role.py
     └── bill.py               # DTOs de request/response del módulo bills
 </code></pre>
-<p>No existen todavía: capa de <code>services</code> separada de los routers, tests automatizados, ni <code>requirements.txt</code> con versiones fijadas (el archivo existe pero está vacío).</p>
+<p>La carpeta <code>services/</code> solo cubre el asiento de cancelación y el envío de correo; el resto de la lógica sigue en los routers. No hay tests automatizados. Las versiones de las dependencias están fijadas en <code>requirements.txt</code>.</p>
 <hr />
 <h1 id="11-seguridad">11. Seguridad</h1>
 <p>Implementado:</p>
@@ -429,7 +430,7 @@ Breakdown
 <li>Autenticación por JWT (<code>PyJWT</code>), firmado con clave simétrica, expiración de 90 minutos.</li>
 <li>Password hasheado con <code>bcrypt</code>.</li>
 <li>Autorización fina por permiso (<code>PermissionChecker</code>) a nivel de endpoint.</li>
-<li>CORS restringido a orígenes explícitos (<code>localhost</code>, <code>localhost:4200</code> ya habilitado pensando en Angular).</li>
+<li>CORS restringido a orígenes explícitos (<code>localhost</code>, <code>localhost:5173</code> habilitado para el servidor de desarrollo de Vite). Expone <code>Content-Disposition</code> para las descargas de Excel.</li>
 </ul>
 <p>Pendiente / a reforzar antes de exponer un panel web:</p>
 <ul>
@@ -440,42 +441,49 @@ Breakdown
 <li>No commitear archivos generados con datos reales (Excel/CSV de reportes) — ver sección 14.</li>
 </ul>
 <hr />
-<h1 id="12-frontend-planeado-angular-typescript-tailwind-css">12. Frontend (planeado) — Angular + TypeScript + Tailwind CSS</h1>
-<p>Aún no existe código de frontend. Se construirá como una SPA en Angular que consuma esta API.</p>
+<h1 id="12-frontend-planeado-react-vite-typescript-tailwind-css">12. Frontend (planeado) — React + Vite + TypeScript + Tailwind CSS</h1>
+<p>Aún no existe código de frontend. Se construirá como una SPA con React + Vite que consuma esta API. Es un panel interno detrás de login, sin necesidad de SEO ni renderizado en servidor, por eso se eligió una SPA en lugar de un framework con SSR (Astro, Next.js).</p>
 <h2 id="121-consideraciones-de-integracion">12.1 Consideraciones de integración</h2>
 <ul>
-<li>El backend ya permite CORS desde <code>http://localhost:4200</code> (puerto por defecto de Angular).</li>
-<li>Toda petición deberá incluir el header <code>X-Token</code> (secreto de aplicación) y el <code>Authorization: Bearer &lt;JWT&gt;</code> una vez logueado.</li>
-<li>Angular deberá manejar la renovación/expiración del JWT (90 min) con un interceptor HTTP.</li>
+<li>El backend permite CORS desde <code>http://localhost:5173</code> (puerto por defecto de <code>vite dev</code>). El dominio de producción del panel debe agregarse a <code>origins</code> en <code>main.py</code>.</li>
+<li><code>FRONTEND_URL</code> (en <code>.env</code>) debe apuntar al panel; el backend arma con ella el enlace <code>FRONTEND_URL/reset-password?token=...</code>, así que el panel debe tener esa ruta.</li>
+<li>Toda petición deberá incluir el header <code>X-Token</code> (secreto de aplicación) y el <code>Authorization: Bearer &lt;JWT&gt;</code> una vez logueado. Centralizarlo en un único cliente HTTP (wrapper de <code>fetch</code>) en vez de repetirlo en cada llamada.</li>
+<li>Las variables <code>VITE_*</code> se incluyen en el bundle y cualquiera puede leerlas desde el navegador: <code>VITE_API_URL</code> es apropiada, pero el <code>X-Token</code> deja de ser secreto si se pone ahí (ver sección 14).</li>
+<li>El JWT expira a los 90 minutos y no hay endpoint de renovación: ante un 401 el cliente HTTP debe cerrar la sesión y redirigir al login.</li>
+<li>Los reportes GET (<code>sales_book</code>, <code>book_entry</code>, <code>cancellation_book</code>, <code>cancellation_entry</code>, <code>cruce_documents_niubiz</code>) reciben las fechas como query params. Con <code>format=json</code> devuelven las filas para mostrarlas en tablas; con <code>format=xlsx</code> devuelven el Excel. Para descargarlo: <code>fetch</code> → <code>response.blob()</code> → <code>URL.createObjectURL</code> → <code>&lt;a download&gt;</code>, tomando el nombre del header <code>Content-Disposition</code>. Con <code>format=xlsx</code> y sin datos responden 404 con el motivo en <code>detail</code>.</li>
+<li><code>POST /bills/extract_data</code> recibe <code>emission_date_start</code> y <code>emission_date_end</code> como fechas <code>YYYY-MM-DD</code>.</li>
+<li>Procesos largos (sincronización con Bsale, matching) son síncronos: mostrar estado de carga y evitar doble envío.</li>
 </ul>
 <h2 id="122-estructura-conceptual-sugerida">12.2 Estructura conceptual sugerida</h2>
-<pre><code class="language-text">src/app/
-├── core/
-│   ├── interceptors/        # auth.interceptor.ts (X-Token + Bearer), error.interceptor.ts
-│   ├── guards/               # auth.guard.ts, permission.guard.ts
-│   └── services/             # auth.service.ts, http-base.service.ts
-├── shared/
-│   ├── components/           # tablas, botones, modales, date-range-picker
-│   └── pipes/ directives/
+<pre><code class="language-text">src/
+├── main.tsx
+├── app/
+│   ├── router.tsx             # rutas, rutas protegidas por sesión y permiso
+│   └── providers.tsx          # cliente de datos, sesión
+├── lib/
+│   ├── api-client.ts          # fetch con X-Token + Bearer, manejo de 401 y errores
+│   ├── api-types.ts           # generado desde /openapi.json
+│   └── download.ts            # descarga de Excel (blob + Content-Disposition)
+├── components/                # tablas, botones, modales, date-range-picker
 ├── features/
-│   ├── auth/
-│   │   └── login/
+│   ├── auth/                  # login, forgot/reset password
 │   ├── dashboard/
 │   ├── users/                 # CRUD usuarios
 │   ├── roles/                 # CRUD roles y asignación de permisos
-│   ├── documents/              # consulta de documentos sincronizados
-│   ├── payments/                # consulta de pagos sincronizados
+│   ├── documents/             # consulta de documentos sincronizados
+│   ├── payments/              # consulta de pagos sincronizados
 │   ├── niubiz/
-│   │   ├── upload/              # carga de archivo de liquidación
-│   │   └── matching/            # ejecutar y revisar matching
-│   ├── cancellation-book/        # revisión y confirmación del libro de cancelación
+│   │   ├── upload/            # carga de archivo de liquidación
+│   │   └── matching/          # ejecutar y revisar matching
+│   ├── cancellation-book/     # revisión y confirmación del libro de cancelación
 │   └── reports/
-│       ├── sales-book/            # libro de ventas
-│       └── book-entry/             # asiento contable
-├── app.routes.ts
-└── app.config.ts
+│       ├── sales-book/        # libro de ventas
+│       └── book-entry/        # asiento contable
+└── styles/
 </code></pre>
-<p>Estilos con <strong>Tailwind CSS</strong> (utility-first), sin librería de componentes adicional salvo que el equipo decida incorporar una (ej. PrimeNG, Angular Material) — a definir.</p>
+<p>Cada carpeta de <code>features/</code> agrupa sus páginas, componentes y llamadas a la API (hooks), para que un módulo se pueda trabajar sin tocar los demás.</p>
+<p>Librerías sugeridas, a confirmar antes de instalarlas (ver sección 19): React Router o TanStack Router (rutas), TanStack Query (llamadas y caché), TanStack Table (tablas), React Hook Form + Zod (formularios), <code>openapi-typescript</code> (tipos desde FastAPI).</p>
+<p>Estilos con <strong>Tailwind CSS</strong> (utility-first), sin librería de componentes adicional salvo que el equipo decida incorporar una (ej. shadcn/ui, que copia los componentes al proyecto en lugar de instalarlos como dependencia) — a definir.</p>
 <h2 id="123-pantallas-minimas-del-mvp-de-frontend">12.3 Pantallas mínimas del MVP de frontend</h2>
 <ol>
 <li><strong>Login</strong> — consume <code>POST /users/login</code>.</li>
@@ -488,12 +496,135 @@ Breakdown
 <li><strong>Reportes</strong> — generar y descargar libro de ventas y asiento contable por rango de fechas.</li>
 </ol>
 <hr />
-<h1 id="13-responsive">13. Responsive</h1>
+<h2 id="124-responsive">12.4 Responsive</h2>
 <p>Prioridad media-alta: es un panel interno de uso administrativo, principalmente en desktop, pero debe ser usable en tablet. Mobile no es prioritario para el MVP del frontend.</p>
+<hr />
+<h1 id="13-despliegue-requisitos-minimos">13. Despliegue — requisitos mínimos</h1>
+<p>Para el volumen actual (base de datos de ~74 MB, equipo interno pequeño) basta un solo servidor Linux que corra la API, MySQL y Nginx, y que sirva el panel como archivos estáticos. Si el volumen crece, lo primero que conviene separar es MySQL.</p>
+<h2 id="131-servidor">13.1 Servidor</h2>
+<table>
+<thead>
+<tr>
+<th>Recurso</th>
+<th>Mínimo</th>
+<th>Recomendado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>2 vCPU</td>
+<td>2 vCPU</td>
+</tr>
+<tr>
+<td>RAM</td>
+<td>2 GB</td>
+<td>4 GB (margen para pandas en reportes de varios meses y para el buffer de MySQL)</td>
+</tr>
+<tr>
+<td>Disco</td>
+<td>20 GB SSD</td>
+<td>20 GB SSD + backups fuera del servidor</td>
+</tr>
+<tr>
+<td>Sistema operativo</td>
+<td>Ubuntu 22.04 o 24.04 LTS</td>
+<td>Igual</td>
+</tr>
+<tr>
+<td>Dominio</td>
+<td>2 subdominios con HTTPS (ej. <code>panel.</code> y <code>api.</code>)</td>
+<td>Certificados de Let's Encrypt</td>
+</tr>
+</tbody>
+</table>
+<h2 id="132-software">13.2 Software</h2>
+<table>
+<thead>
+<tr>
+<th>Componente</th>
+<th>Versión mínima</th>
+<th>Motivo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python</td>
+<td>3.10</td>
+<td>Versión con la que se desarrolló y probó (3.10.11).</td>
+</tr>
+<tr>
+<td>MySQL</td>
+<td>8.0</td>
+<td><code>queries/repote_cancelacion.sql</code> usa <code>WITH</code> (CTE), que no existe en 5.7. Hoy corre 8.0.36. Juego de caracteres <code>utf8mb4</code>.</td>
+</tr>
+<tr>
+<td>Paquetes del sistema</td>
+<td><code>build-essential</code>, <code>pkg-config</code>, <code>python3-dev</code>, <code>default-libmysqlclient-dev</code></td>
+<td>Necesarios para compilar <code>mysqlclient</code> en Linux.</td>
+</tr>
+<tr>
+<td>Nginx</td>
+<td>1.18</td>
+<td>HTTPS, proxy hacia uvicorn y servidor de los archivos del panel.</td>
+</tr>
+<tr>
+<td>Node.js</td>
+<td>22 LTS</td>
+<td>Solo para compilar el panel (<code>vite build</code>); no se necesita en producción.</td>
+</tr>
+</tbody>
+</table>
+<p>Las dependencias de Python están fijadas en <code>requirements.txt</code> (<code>pip install -r requirements.txt</code>).</p>
+<h2 id="133-red">13.3 Red</h2>
+<table>
+<thead>
+<tr>
+<th>Dirección</th>
+<th>Puerto</th>
+<th>Destino</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Entrada</td>
+<td>443 (80 solo para redirigir a HTTPS)</td>
+<td>Nginx: panel y API</td>
+</tr>
+<tr>
+<td>Salida</td>
+<td>443</td>
+<td><code>api.bsale.io</code> y <code>api.apis.net.pe</code></td>
+</tr>
+<tr>
+<td>Salida</td>
+<td>587</td>
+<td>Servidor SMTP (correo de recuperación de contraseña)</td>
+</tr>
+<tr>
+<td>Cerrado al exterior</td>
+<td>3306 y 8000</td>
+<td>MySQL y uvicorn escuchan solo en <code>127.0.0.1</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="134-configuracion-obligatoria">13.4 Configuración obligatoria</h2>
+<ol>
+<li><strong>Zona horaria del servidor <code>America/Lima</code></strong> (crítico). El código usa la hora local del servidor para convertir fechas de Bsale (<code>convert_timestamp_peru</code>, <code>insert_payments</code>, <code>createdAt</code> de pagos). En un servidor en UTC los documentos y pagos quedan con la fecha u hora corridas 5 horas. Usar <code>timedatectl set-timezone America/Lima</code> o <code>TZ=America/Lima</code> en el servicio.</li>
+<li><strong>Variables de entorno</strong> (crítico): <code>SECRET_TOKEN</code>, <code>SECRET_KEY</code>, <code>MYSQL_*</code>, <code>ACCESS_TOKEN_BSALE</code>, <code>API_SUNAT_URL</code>, <code>API_SUNAT_TOKEN</code>, <code>SMTP_*</code> y <code>FRONTEND_URL</code> con el dominio real del panel. En el panel, <code>VITE_API_URL</code> con la URL pública de la API.</li>
+<li><strong>CORS</strong>: agregar el dominio de producción del panel a <code>origins</code> en <code>main.py</code>.</li>
+<li><strong>Nginx, tiempos de espera</strong>: la sincronización con Bsale y el matching son síncronos y pueden tardar minutos → <code>proxy_read_timeout 300s</code>.</li>
+<li><strong>Nginx, tamaño de carga</strong>: el límite por defecto (1 MB) bloquea el Excel de Niubiz → <code>client_max_body_size 20m</code>.</li>
+<li><strong>Nginx, rutas del panel</strong>: toda ruta que no sea un archivo debe devolver <code>index.html</code> (<code>try_files $uri /index.html</code>); si no, el enlace <code>/reset-password</code> que llega por correo da 404.</li>
+<li><strong>Usuario de MySQL</strong>: la API ejecuta <code>Base.metadata.create_all</code> al arrancar, así que necesita <code>CREATE</code> e <code>INDEX</code> además de <code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code> y <code>DELETE</code> (o crear las tablas antes del despliegue).</li>
+<li><strong>Carpeta persistente</strong> para <code>static/avatars/</code>: debe sobrevivir a los despliegues (volumen, si se usan contenedores).</li>
+<li><strong>uvicorn como servicio</strong> (systemd o contenedor): <code>uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers</code>, con reinicio automático y Nginx como única entrada.</li>
+<li><strong>Backup diario de MySQL</strong> (<code>mysqldump</code>) guardado fuera del servidor. La tabla <code>cancellation_entry_folio</code> guarda los folios ya enviados a SIIGO y no se puede reconstruir desde Bsale.</li>
+</ol>
 <hr />
 <h1 id="14-pendientes-conocidos-del-backend-a-resolver-antes-o-durante-la-construccion-del-frontend">14. Pendientes conocidos del backend (a resolver antes o durante la construcción del frontend)</h1>
 <ol>
-<li><code>requirements.txt</code> vacío — no hay versiones fijadas de dependencias.</li>
+<li>~~<code>requirements.txt</code> vacío~~ — resuelto: <code>requirements.txt</code> con versiones fijadas (ver sección 13).</li>
 <li>Archivos generados (reportes Excel/CSV con datos reales de clientes y operaciones) están sueltos en la raíz del repo y sin trackear — <strong>no deben commitearse</strong>; deben excluirse vía <code>.gitignore</code> y, de ser necesario, moverse a un storage fuera del repositorio.</li>
 <li><code>__pycache__/*.pyc</code> versionados en git — deben ignorarse.</li>
 <li>CRUD incompleto de usuarios (editar, desactivar) y de roles/permisos (editar, eliminar, asignar permisos).</li>
@@ -502,12 +633,13 @@ Breakdown
 <li>Sin tests automatizados.</li>
 <li><code>PermissionChecker</code> no aplicado de forma uniforme en todos los endpoints sensibles de <code>bills.py</code>.</li>
 <li>No existe endpoint para editar/eliminar documentos, pagos o configuraciones (clients, centers, subcenters, taxes) desde la API — hoy se insertan solo vía sincronización con Bsale.</li>
+<li><code>X-Token</code> global: un SPA tendría que incluirlo en el bundle, donde es público. Decidir antes del frontend si se elimina (confiando en JWT + permisos) o si se mantiene solo entre servidores.</li>
 </ol>
 <hr />
 <h1 id="15-prioridad-de-implementacion-sugerida">15. Prioridad de implementación sugerida</h1>
 <h2 id="bloque-1-saneamiento-del-backend">BLOQUE 1 — Saneamiento del backend</h2>
 <ol>
-<li>Congelar <code>requirements.txt</code>.</li>
+<li>~~Congelar <code>requirements.txt</code>~~ (hecho).</li>
 <li>Sacar del repo y del historial los archivos de datos reales (Excel/CSV) y el <code>__pycache__</code>.</li>
 <li>Mover el secreto JWT a <code>SECRET_KEY</code> de entorno.</li>
 <li>Manejo de errores controlado en <code>get_current_user</code>.</li>
@@ -519,11 +651,12 @@ Breakdown
 <li>Endpoints de consulta paginada para documents, payments, operaciones_niubiz (hoy los reportes solo devuelven Excel/objetos completos, no hay listados paginados pensados para UI).</li>
 <li>Aplicar <code>PermissionChecker</code> en todos los endpoints de <code>bills.py</code>.</li>
 </ol>
-<h2 id="bloque-3-frontend-base-del-proyecto-angular">BLOQUE 3 — Frontend: base del proyecto Angular</h2>
+<h2 id="bloque-3-frontend-base-del-proyecto-react-vite">BLOQUE 3 — Frontend: base del proyecto React + Vite</h2>
 <ol>
-<li>Crear proyecto Angular + Tailwind CSS + TypeScript estricto.</li>
-<li>Layout base, routing, interceptores (<code>X-Token</code>, <code>Authorization</code>), guards.</li>
+<li>Crear proyecto con <code>npm create vite@latest</code> (plantilla <code>react-ts</code>) + Tailwind CSS + TypeScript estricto.</li>
+<li>Layout base, routing, cliente HTTP único (<code>X-Token</code>, <code>Authorization</code>, manejo de 401), rutas protegidas por sesión y permiso.</li>
 <li>Login conectado a <code>/users/login</code> + manejo de sesión.</li>
+<li>Generar los tipos de la API desde <code>/openapi.json</code> de FastAPI.</li>
 </ol>
 <h2 id="bloque-4-frontend-modulos-administrativos">BLOQUE 4 — Frontend: módulos administrativos</h2>
 <ol>
@@ -542,7 +675,7 @@ Breakdown
 </ol>
 <hr />
 <h1 id="16-flujo-critico-que-debe-funcionar-de-punta-a-punta">16. Flujo crítico que debe funcionar de punta a punta</h1>
-<pre><code class="language-text">1. Usuario inicia sesión en el panel Angular.
+<pre><code class="language-text">1. Usuario inicia sesión en el panel web.
 2. Dispara la sincronización de documentos y pagos de un rango de fechas.
 3. Sube el archivo de liquidación Niubiz del mismo periodo.
 4. Ejecuta el matching.
@@ -571,7 +704,7 @@ Breakdown
 <ol>
 <li>No romper la lógica de conciliación existente (<code>matching_niubiz</code>) sin cubrir con tests antes/después.</li>
 <li>No commitear datos reales de clientes ni reportes generados.</li>
-<li>Mantener el doble esquema de seguridad (X-Token + JWT + permisos) también desde el frontend.</li>
+<li>Mantener JWT + permisos desde el frontend. El <code>X-Token</code> se envía mientras exista, pero hay que resolver el pendiente 10 de la sección 14 antes de publicar el panel.</li>
 <li>No introducir una librería de componentes UI pesada sin antes validarlo con el equipo — mantener Tailwind CSS como base.</li>
 <li>Mantener TypeScript estricto en el frontend; evitar <code>any</code> salvo justificación.</li>
 <li>Las reglas de autorización siempre en backend; el frontend solo oculta/muestra UI según permisos, nunca depende de eso para seguridad real.</li>
@@ -592,7 +725,7 @@ Breakdown
     ↓
 CRUD de soporte (usuarios, roles, permisos, listados paginados)
     ↓
-Base del frontend Angular
+Base del frontend React + Vite
     ↓
 Módulos administrativos (usuarios, roles, dashboard)
     ↓

@@ -18,8 +18,8 @@
 
 **Stack tecnológico planeado (frontend):**
 
-- Angular
-- TypeScript
+- React + Vite (SPA)
+- TypeScript estricto
 - Tailwind CSS
 
 > El frontend todavía no existe. Esta ficha documenta el backend tal como está implementado hoy y define el alcance esperado del panel administrativo que se construirá sobre él.
@@ -35,7 +35,7 @@ Camila Viali es una empresa retail que opera su punto de venta / ERP sobre **Bsa
 - Generar reportes contables (libro de ventas, asiento contable, asiento de cancelación) en formato Excel para ser cargados al sistema contable (SIIGO).
 - Mantener un sistema de usuarios internos con roles y permisos para controlar quién puede ejecutar cada proceso.
 
-Hoy esta lógica vive únicamente como una API (FastAPI) que se opera vía llamadas HTTP/Postman o procesos batch. El objetivo de la siguiente fase es exponer esa misma lógica a través de un panel administrativo web (Angular) para que el equipo contable/financiero no dependa de llamar la API manualmente.
+Hoy esta lógica vive únicamente como una API (FastAPI) que se opera vía llamadas HTTP/Postman o procesos batch. El objetivo de la siguiente fase es exponer esa misma lógica a través de un panel administrativo web (React + Vite) para que el equipo contable/financiero no dependa de llamar la API manualmente.
 
 ---
 
@@ -46,7 +46,7 @@ Hoy esta lógica vive únicamente como una API (FastAPI) que se opera vía llama
 3. Permitir revisar y confirmar manualmente el "libro de cancelación" antes de darlo por cerrado.
 4. Generar reportes contables (libro de ventas, asiento contable) listos para el área de contabilidad.
 5. Administrar usuarios internos, roles y permisos.
-6. Construir un panel web (Angular) que permita ejecutar y monitorear todos estos procesos sin usar la API directamente.
+6. Construir un panel web (React + Vite) que permita ejecutar y monitorear todos estos procesos sin usar la API directamente.
 
 ---
 
@@ -141,7 +141,7 @@ Este es el módulo principal del sistema. Endpoints actuales:
 
 | Endpoint | Método | Función |
 |---|---|---|
-| `/bills/extract_data` | GET | Sincroniza documentos (boletas/facturas/NC), clientes, monedas y desgloses de impuestos desde Bsale hacia la BD local, para un rango de fechas de emisión. |
+| `/bills/extract_data` | POST | Sincroniza documentos (boletas/facturas/NC), clientes, monedas y desgloses de impuestos desde Bsale hacia la BD local, para un rango de fechas de emisión. Body: `emission_date_start` y `emission_date_end` (`YYYY-MM-DD`, inclusive). |
 | `/bills/insert_payment_types` | POST | Sincroniza el catálogo de tipos de pago desde Bsale. |
 | `/bills/insert_payments` | POST | Sincroniza pagos desde Bsale para una fecha de registro (`recordDate`), incluyendo N° de operación asociado. |
 | `/bills/insert_exchanges` | POST | Sincroniza tipos de cambio (compra/venta) desde SUNAT para un mes/año. |
@@ -151,6 +151,8 @@ Este es el módulo principal del sistema. Endpoints actuales:
 | `/bills/cancellation_book/confirm` | POST | Marca como confirmados (`canceled = 1`) los `payment_source_match` cuyos ids fueron revisados manualmente en el Excel anterior. |
 | `/bills/sales_book` | GET | Genera el libro de ventas (formato tributario Perú: código tributario, serie, receptor, IGV, neto, total, referencias de notas de crédito, anulaciones) para un rango de fechas. |
 | `/bills/book_entry` | GET | Genera el asiento contable (formato SIIGO: cuentas, centros de costo/subcentro, referencias, impuestos desglosados) para un rango de fechas. |
+
+Los reportes GET (`cancellation_book`, `cancellation_entry`, `cruce_documents_niubiz`, `sales_book`, `book_entry`) reciben las fechas como query params y aceptan `format=json` (por defecto) o `format=xlsx`, que devuelve el Excel como descarga (`Content-Disposition: attachment`). Con `format=xlsx` y sin filas responden 404. Ningún reporte se escribe en el disco del servidor.
 
 Reglas de negocio relevantes ya implementadas:
 
@@ -344,7 +346,7 @@ camila-viali-backend/
     └── bill.py               # DTOs de request/response del módulo bills
 ```
 
-No existen todavía: capa de `services` separada de los routers, tests automatizados, ni `requirements.txt` con versiones fijadas (el archivo existe pero está vacío).
+La carpeta `services/` solo cubre el asiento de cancelación y el envío de correo; el resto de la lógica sigue en los routers. No hay tests automatizados. Las versiones de las dependencias están fijadas en `requirements.txt`.
 
 ---
 
@@ -356,7 +358,7 @@ Implementado:
 - Autenticación por JWT (`PyJWT`), firmado con clave simétrica, expiración de 90 minutos.
 - Password hasheado con `bcrypt`.
 - Autorización fina por permiso (`PermissionChecker`) a nivel de endpoint.
-- CORS restringido a orígenes explícitos (`localhost`, `localhost:4200` ya habilitado pensando en Angular).
+- CORS restringido a orígenes explícitos (`localhost`, `localhost:5173` habilitado para el servidor de desarrollo de Vite). Expone `Content-Disposition` para las descargas de Excel.
 
 Pendiente / a reforzar antes de exponer un panel web:
 
@@ -368,47 +370,56 @@ Pendiente / a reforzar antes de exponer un panel web:
 
 ---
 
-# 12. Frontend (planeado) — Angular + TypeScript + Tailwind CSS
+# 12. Frontend (planeado) — React + Vite + TypeScript + Tailwind CSS
 
-Aún no existe código de frontend. Se construirá como una SPA en Angular que consuma esta API.
+Aún no existe código de frontend. Se construirá como una SPA con React + Vite que consuma esta API. Es un panel interno detrás de login, sin necesidad de SEO ni renderizado en servidor, por eso se eligió una SPA en lugar de un framework con SSR (Astro, Next.js).
 
 ## 12.1 Consideraciones de integración
 
-- El backend ya permite CORS desde `http://localhost:4200` (puerto por defecto de Angular).
-- Toda petición deberá incluir el header `X-Token` (secreto de aplicación) y el `Authorization: Bearer <JWT>` una vez logueado.
-- Angular deberá manejar la renovación/expiración del JWT (90 min) con un interceptor HTTP.
+- El backend permite CORS desde `http://localhost:5173` (puerto por defecto de `vite dev`). El dominio de producción del panel debe agregarse a `origins` en `main.py`.
+- `FRONTEND_URL` (en `.env`) debe apuntar al panel; el backend arma con ella el enlace `FRONTEND_URL/reset-password?token=...`, así que el panel debe tener esa ruta.
+- Toda petición deberá incluir el header `X-Token` (secreto de aplicación) y el `Authorization: Bearer <JWT>` una vez logueado. Centralizarlo en un único cliente HTTP (wrapper de `fetch`) en vez de repetirlo en cada llamada.
+- Las variables `VITE_*` se incluyen en el bundle y cualquiera puede leerlas desde el navegador: `VITE_API_URL` es apropiada, pero el `X-Token` deja de ser secreto si se pone ahí (ver sección 14).
+- El JWT expira a los 90 minutos y no hay endpoint de renovación: ante un 401 el cliente HTTP debe cerrar la sesión y redirigir al login.
+- Los reportes GET (`sales_book`, `book_entry`, `cancellation_book`, `cancellation_entry`, `cruce_documents_niubiz`) reciben las fechas como query params. Con `format=json` devuelven las filas para mostrarlas en tablas; con `format=xlsx` devuelven el Excel. Para descargarlo: `fetch` → `response.blob()` → `URL.createObjectURL` → `<a download>`, tomando el nombre del header `Content-Disposition`. Con `format=xlsx` y sin datos responden 404 con el motivo en `detail`.
+- `POST /bills/extract_data` recibe `emission_date_start` y `emission_date_end` como fechas `YYYY-MM-DD`.
+- Procesos largos (sincronización con Bsale, matching) son síncronos: mostrar estado de carga y evitar doble envío.
 
 ## 12.2 Estructura conceptual sugerida
 
 ```text
-src/app/
-├── core/
-│   ├── interceptors/        # auth.interceptor.ts (X-Token + Bearer), error.interceptor.ts
-│   ├── guards/               # auth.guard.ts, permission.guard.ts
-│   └── services/             # auth.service.ts, http-base.service.ts
-├── shared/
-│   ├── components/           # tablas, botones, modales, date-range-picker
-│   └── pipes/ directives/
+src/
+├── main.tsx
+├── app/
+│   ├── router.tsx             # rutas, rutas protegidas por sesión y permiso
+│   └── providers.tsx          # cliente de datos, sesión
+├── lib/
+│   ├── api-client.ts          # fetch con X-Token + Bearer, manejo de 401 y errores
+│   ├── api-types.ts           # generado desde /openapi.json
+│   └── download.ts            # descarga de Excel (blob + Content-Disposition)
+├── components/                # tablas, botones, modales, date-range-picker
 ├── features/
-│   ├── auth/
-│   │   └── login/
+│   ├── auth/                  # login, forgot/reset password
 │   ├── dashboard/
 │   ├── users/                 # CRUD usuarios
 │   ├── roles/                 # CRUD roles y asignación de permisos
-│   ├── documents/              # consulta de documentos sincronizados
-│   ├── payments/                # consulta de pagos sincronizados
+│   ├── documents/             # consulta de documentos sincronizados
+│   ├── payments/              # consulta de pagos sincronizados
 │   ├── niubiz/
-│   │   ├── upload/              # carga de archivo de liquidación
-│   │   └── matching/            # ejecutar y revisar matching
-│   ├── cancellation-book/        # revisión y confirmación del libro de cancelación
+│   │   ├── upload/            # carga de archivo de liquidación
+│   │   └── matching/          # ejecutar y revisar matching
+│   ├── cancellation-book/     # revisión y confirmación del libro de cancelación
 │   └── reports/
-│       ├── sales-book/            # libro de ventas
-│       └── book-entry/             # asiento contable
-├── app.routes.ts
-└── app.config.ts
+│       ├── sales-book/        # libro de ventas
+│       └── book-entry/        # asiento contable
+└── styles/
 ```
 
-Estilos con **Tailwind CSS** (utility-first), sin librería de componentes adicional salvo que el equipo decida incorporar una (ej. PrimeNG, Angular Material) — a definir.
+Cada carpeta de `features/` agrupa sus páginas, componentes y llamadas a la API (hooks), para que un módulo se pueda trabajar sin tocar los demás.
+
+Librerías sugeridas, a confirmar antes de instalarlas (ver sección 19): React Router o TanStack Router (rutas), TanStack Query (llamadas y caché), TanStack Table (tablas), React Hook Form + Zod (formularios), `openapi-typescript` (tipos desde FastAPI).
+
+Estilos con **Tailwind CSS** (utility-first), sin librería de componentes adicional salvo que el equipo decida incorporar una (ej. shadcn/ui, que copia los componentes al proyecto en lugar de instalarlos como dependencia) — a definir.
 
 ## 12.3 Pantallas mínimas del MVP de frontend
 
@@ -423,15 +434,65 @@ Estilos con **Tailwind CSS** (utility-first), sin librería de componentes adici
 
 ---
 
-# 13. Responsive
+## 12.4 Responsive
 
 Prioridad media-alta: es un panel interno de uso administrativo, principalmente en desktop, pero debe ser usable en tablet. Mobile no es prioritario para el MVP del frontend.
 
 ---
 
+# 13. Despliegue — requisitos mínimos
+
+Para el volumen actual (base de datos de ~74 MB, equipo interno pequeño) basta un solo servidor Linux que corra la API, MySQL y Nginx, y que sirva el panel como archivos estáticos. Si el volumen crece, lo primero que conviene separar es MySQL.
+
+## 13.1 Servidor
+
+| Recurso | Mínimo | Recomendado |
+|---|---|---|
+| CPU | 2 vCPU | 2 vCPU |
+| RAM | 2 GB | 4 GB (margen para pandas en reportes de varios meses y para el buffer de MySQL) |
+| Disco | 20 GB SSD | 20 GB SSD + backups fuera del servidor |
+| Sistema operativo | Ubuntu 22.04 o 24.04 LTS | Igual |
+| Dominio | 2 subdominios con HTTPS (ej. `panel.` y `api.`) | Certificados de Let's Encrypt |
+
+## 13.2 Software
+
+| Componente | Versión mínima | Motivo |
+|---|---|---|
+| Python | 3.10 | Versión con la que se desarrolló y probó (3.10.11). |
+| MySQL | 8.0 | `queries/repote_cancelacion.sql` usa `WITH` (CTE), que no existe en 5.7. Hoy corre 8.0.36. Juego de caracteres `utf8mb4`. |
+| Paquetes del sistema | `build-essential`, `pkg-config`, `python3-dev`, `default-libmysqlclient-dev` | Necesarios para compilar `mysqlclient` en Linux. |
+| Nginx | 1.18 | HTTPS, proxy hacia uvicorn y servidor de los archivos del panel. |
+| Node.js | 22 LTS | Solo para compilar el panel (`vite build`); no se necesita en producción. |
+
+Las dependencias de Python están fijadas en `requirements.txt` (`pip install -r requirements.txt`).
+
+## 13.3 Red
+
+| Dirección | Puerto | Destino |
+|---|---|---|
+| Entrada | 443 (80 solo para redirigir a HTTPS) | Nginx: panel y API |
+| Salida | 443 | `api.bsale.io` y `api.apis.net.pe` |
+| Salida | 587 | Servidor SMTP (correo de recuperación de contraseña) |
+| Cerrado al exterior | 3306 y 8000 | MySQL y uvicorn escuchan solo en `127.0.0.1` |
+
+## 13.4 Configuración obligatoria
+
+1. **Zona horaria del servidor `America/Lima`** (crítico). El código usa la hora local del servidor para convertir fechas de Bsale (`convert_timestamp_peru`, `insert_payments`, `createdAt` de pagos). En un servidor en UTC los documentos y pagos quedan con la fecha u hora corridas 5 horas. Usar `timedatectl set-timezone America/Lima` o `TZ=America/Lima` en el servicio.
+2. **Variables de entorno** (crítico): `SECRET_TOKEN`, `SECRET_KEY`, `MYSQL_*`, `ACCESS_TOKEN_BSALE`, `API_SUNAT_URL`, `API_SUNAT_TOKEN`, `SMTP_*` y `FRONTEND_URL` con el dominio real del panel. En el panel, `VITE_API_URL` con la URL pública de la API.
+3. **CORS**: agregar el dominio de producción del panel a `origins` en `main.py`.
+4. **Nginx, tiempos de espera**: la sincronización con Bsale y el matching son síncronos y pueden tardar minutos → `proxy_read_timeout 300s`.
+5. **Nginx, tamaño de carga**: el límite por defecto (1 MB) bloquea el Excel de Niubiz → `client_max_body_size 20m`.
+6. **Nginx, rutas del panel**: toda ruta que no sea un archivo debe devolver `index.html` (`try_files $uri /index.html`); si no, el enlace `/reset-password` que llega por correo da 404.
+7. **Usuario de MySQL**: la API ejecuta `Base.metadata.create_all` al arrancar, así que necesita `CREATE` e `INDEX` además de `SELECT`, `INSERT`, `UPDATE` y `DELETE` (o crear las tablas antes del despliegue).
+8. **Carpeta persistente** para `static/avatars/`: debe sobrevivir a los despliegues (volumen, si se usan contenedores).
+9. **uvicorn como servicio** (systemd o contenedor): `uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers`, con reinicio automático y Nginx como única entrada.
+10. **Backup diario de MySQL** (`mysqldump`) guardado fuera del servidor. La tabla `cancellation_entry_folio` guarda los folios ya enviados a SIIGO y no se puede reconstruir desde Bsale.
+
+---
+
 # 14. Pendientes conocidos del backend (a resolver antes o durante la construcción del frontend)
 
-1. `requirements.txt` vacío — no hay versiones fijadas de dependencias.
+1. ~~`requirements.txt` vacío~~ — resuelto: `requirements.txt` con versiones fijadas (ver sección 13).
 2. Archivos generados (reportes Excel/CSV con datos reales de clientes y operaciones) están sueltos en la raíz del repo y sin trackear — **no deben commitearse**; deben excluirse vía `.gitignore` y, de ser necesario, moverse a un storage fuera del repositorio.
 3. `__pycache__/*.pyc` versionados en git — deben ignorarse.
 4. CRUD incompleto de usuarios (editar, desactivar) y de roles/permisos (editar, eliminar, asignar permisos).
@@ -440,6 +501,7 @@ Prioridad media-alta: es un panel interno de uso administrativo, principalmente 
 7. Sin tests automatizados.
 8. `PermissionChecker` no aplicado de forma uniforme en todos los endpoints sensibles de `bills.py`.
 9. No existe endpoint para editar/eliminar documentos, pagos o configuraciones (clients, centers, subcenters, taxes) desde la API — hoy se insertan solo vía sincronización con Bsale.
+10. `X-Token` global: un SPA tendría que incluirlo en el bundle, donde es público. Decidir antes del frontend si se elimina (confiando en JWT + permisos) o si se mantiene solo entre servidores.
 
 ---
 
@@ -447,7 +509,7 @@ Prioridad media-alta: es un panel interno de uso administrativo, principalmente 
 
 ## BLOQUE 1 — Saneamiento del backend
 
-1. Congelar `requirements.txt`.
+1. ~~Congelar `requirements.txt`~~ (hecho).
 2. Sacar del repo y del historial los archivos de datos reales (Excel/CSV) y el `__pycache__`.
 3. Mover el secreto JWT a `SECRET_KEY` de entorno.
 4. Manejo de errores controlado en `get_current_user`.
@@ -459,11 +521,12 @@ Prioridad media-alta: es un panel interno de uso administrativo, principalmente 
 3. Endpoints de consulta paginada para documents, payments, operaciones_niubiz (hoy los reportes solo devuelven Excel/objetos completos, no hay listados paginados pensados para UI).
 4. Aplicar `PermissionChecker` en todos los endpoints de `bills.py`.
 
-## BLOQUE 3 — Frontend: base del proyecto Angular
+## BLOQUE 3 — Frontend: base del proyecto React + Vite
 
-1. Crear proyecto Angular + Tailwind CSS + TypeScript estricto.
-2. Layout base, routing, interceptores (`X-Token`, `Authorization`), guards.
+1. Crear proyecto con `npm create vite@latest` (plantilla `react-ts`) + Tailwind CSS + TypeScript estricto.
+2. Layout base, routing, cliente HTTP único (`X-Token`, `Authorization`, manejo de 401), rutas protegidas por sesión y permiso.
 3. Login conectado a `/users/login` + manejo de sesión.
+4. Generar los tipos de la API desde `/openapi.json` de FastAPI.
 
 ## BLOQUE 4 — Frontend: módulos administrativos
 
@@ -485,7 +548,7 @@ Prioridad media-alta: es un panel interno de uso administrativo, principalmente 
 # 16. Flujo crítico que debe funcionar de punta a punta
 
 ```text
-1. Usuario inicia sesión en el panel Angular.
+1. Usuario inicia sesión en el panel web.
 2. Dispara la sincronización de documentos y pagos de un rango de fechas.
 3. Sube el archivo de liquidación Niubiz del mismo periodo.
 4. Ejecuta el matching.
@@ -522,7 +585,7 @@ No existen tests hoy. Prioridad sugerida para el backend:
 
 1. No romper la lógica de conciliación existente (`matching_niubiz`) sin cubrir con tests antes/después.
 2. No commitear datos reales de clientes ni reportes generados.
-3. Mantener el doble esquema de seguridad (X-Token + JWT + permisos) también desde el frontend.
+3. Mantener JWT + permisos desde el frontend. El `X-Token` se envía mientras exista, pero hay que resolver el pendiente 10 de la sección 14 antes de publicar el panel.
 4. No introducir una librería de componentes UI pesada sin antes validarlo con el equipo — mantener Tailwind CSS como base.
 5. Mantener TypeScript estricto en el frontend; evitar `any` salvo justificación.
 6. Las reglas de autorización siempre en backend; el frontend solo oculta/muestra UI según permisos, nunca depende de eso para seguridad real.
@@ -547,7 +610,7 @@ Saneamiento backend
     ↓
 CRUD de soporte (usuarios, roles, permisos, listados paginados)
     ↓
-Base del frontend Angular
+Base del frontend React + Vite
     ↓
 Módulos administrativos (usuarios, roles, dashboard)
     ↓

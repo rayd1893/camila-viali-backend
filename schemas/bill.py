@@ -4,8 +4,8 @@ from datetime import date, datetime
 from decimal import Decimal
 
 class RequestDocument(BaseModel):
-    emission_date_start: int
-    emission_date_end: int
+    emission_date_start: date
+    emission_date_end: date
 
 class RequestReport(BaseModel):
     start_date: date
