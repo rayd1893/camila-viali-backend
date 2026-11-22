@@ -120,7 +120,7 @@ Esto permite crear roles como los siguientes (sugeridos para el panel, configura
 - `POST /users/login` — autentica por `username` o `email` + password (bcrypt), devuelve un JWT (`access_token`, expira en 90 minutos).
 - `GET /users/me` — devuelve el usuario autenticado a partir del token.
 - Todo el API además exige un header global `X-Token` (secreto compartido, `SECRET_TOKEN`) validado en `dependencies.verify_token` para **todas** las rutas, independientemente del JWT.
-- Autorización fina por permiso vía `PermissionChecker(required_permission)`, que revisa si el rol del usuario autenticado tiene el permiso requerido.
+- Autorización fina por permiso vía `PermissionChecker(required_permission)`, que revisa si el rol del usuario autenticado tiene el permiso requerido y activo (`permissions.status`). Si falta el JWT o es inválido responde 401; si falta el permiso, 403.
 
 ## 6.2 Usuarios (`/users`)
 
@@ -137,7 +137,18 @@ Esto permite crear roles como los siguientes (sugeridos para el panel, configura
 
 ## 6.4 Documentos, pagos y reportes (`/bills`)
 
-Este es el módulo principal del sistema. Endpoints actuales:
+Este es el módulo principal del sistema. Todas sus rutas exigen JWT (`Authorization: Bearer`) además del `X-Token`, y cada una pide un permiso según el tipo de operación:
+
+| Permiso | Endpoints de `/bills` |
+|---|---|
+| `bills:read` | `sales_book`, `book_entry`, `cancellation_book`, `cancellation_entry`, `cruce_documents_niubiz`, `GET cancellation_entry/folios` |
+| `bills:sync` | `extract_data`, `insert_payments`, `insert_payment_types`, `insert_exchanges` |
+| `bills:reconcile` | `upload_niubiz`, `matching_niubiz` |
+| `bills:confirm` | `cancellation_book/confirm`, `POST cancellation_entry/folios` |
+
+Los permisos se crean y se asignan al rol `admin` con `queries/add_bills_permissions.sql`.
+
+Endpoints actuales:
 
 | Endpoint | Método | Función |
 |---|---|---|
@@ -363,7 +374,6 @@ Implementado:
 
 Pendiente / a reforzar antes de exponer un panel web:
 
-- Aplicar `PermissionChecker` de forma consistente en **todos** los endpoints de `bills.py` (hoy no todos lo usan).
 - Rate limiting en `/users/login`.
 - No commitear archivos generados con datos reales (Excel/CSV de reportes) — ver sección 14.
 
@@ -498,7 +508,7 @@ Las dependencias de Python están fijadas en `requirements.txt` (`pip install -r
 5. `GET /users/{username}` es un stub sin implementar.
 6. ~~Clave de firma JWT hardcodeada (`'secret'`)~~ — resuelto: se firma con `SECRET_KEY` del entorno.
 7. Sin tests automatizados.
-8. `PermissionChecker` no aplicado de forma uniforme en todos los endpoints sensibles de `bills.py`.
+8. ~~`PermissionChecker` no aplicado de forma uniforme en `bills.py`~~ — resuelto: JWT + permiso en todas las rutas de `/bills` (ver 6.4).
 9. No existe endpoint para editar/eliminar documentos, pagos o configuraciones (clients, centers, subcenters, taxes) desde la API — hoy se insertan solo vía sincronización con Bsale.
 10. `X-Token` global: un SPA tendría que incluirlo en el bundle, donde es público. Decidir antes del frontend si se elimina (confiando en JWT + permisos) o si se mantiene solo entre servidores.
 
@@ -518,7 +528,7 @@ Las dependencias de Python están fijadas en `requirements.txt` (`pip install -r
 1. CRUD completo de usuarios (editar, activar/desactivar).
 2. CRUD completo de roles y gestión de permisos (asignar/quitar).
 3. Endpoints de consulta paginada para documents, payments, operaciones_niubiz (hoy los reportes solo devuelven Excel/objetos completos, no hay listados paginados pensados para UI).
-4. Aplicar `PermissionChecker` en todos los endpoints de `bills.py`.
+4. ~~Aplicar `PermissionChecker` en todos los endpoints de `bills.py`~~ (hecho).
 
 ## BLOQUE 3 — Frontend: base del proyecto React + Vite
 

@@ -34,6 +34,7 @@ from models.payment_source_match import PaymentSourceMatch
 from models.cancellation_entry_folio import CancellationEntryFolio
 from schemas.bill import Clients, Coins, DocumentTypes, Documents, Returns, RequestDocument, RequestExchange, RequestReport, RequestPayment, Exchanges, Approvals, Centers, Subcenters, Payments, PaymentTypes, OperacionesNiubiz, RequestPaymentMatch, RequestCancellationBook, CancelCancellationBook, RequestCancellationEntry, CancellationEntryFolioOut, RequestRegisterManualFolio
 from services.cancellation_entry import generate_cancellation_entry_rows
+from routers.users import get_current_user, PermissionChecker
 from typing import List, Literal
 
 load_dotenv()
@@ -51,8 +52,23 @@ headers = {
 router = APIRouter(
     prefix="/bills",
     tags=["bills"],
-    responses={404: {"description": "Not found"}}
+    # Todas las rutas exigen un JWT válido (Authorization: Bearer), además del
+    # X-Token global. Cada endpoint pide además uno de los permisos de abajo.
+    dependencies=[Depends(get_current_user)],
+    responses={
+        401: {"description": "Falta el JWT, venció o es inválido"},
+        403: {"description": "El usuario no tiene el permiso requerido"},
+        404: {"description": "Not found"},
+    },
 )
+
+# Permisos por tipo de operación (tabla permissions). Separarlos permite que
+# alguien vea y descargue reportes sin poder sincronizar, conciliar ni
+# confirmar. Se crean con queries/add_bills_permissions.sql.
+PERM_READ      = [Depends(PermissionChecker("bills:read"))]       # reportes y consultas
+PERM_SYNC      = [Depends(PermissionChecker("bills:sync"))]       # sincronizar desde Bsale / SUNAT
+PERM_RECONCILE = [Depends(PermissionChecker("bills:reconcile"))]  # cargar y conciliar Niubiz
+PERM_CONFIRM   = [Depends(PermissionChecker("bills:confirm"))]    # confirmar cancelaciones y folios
 
 logging.basicConfig(
     level=logging.INFO,
@@ -670,7 +686,7 @@ def find_best_match(
     ))
     return candidates[0]
 
-@router.post('/matching_niubiz')
+@router.post('/matching_niubiz', dependencies=PERM_RECONCILE)
 def run_matching(
     requestMatch: RequestPaymentMatch,
     session: Session = Depends(get_db)
@@ -805,7 +821,7 @@ def run_matching(
         'unmatched': unmatched
     }
 
-@router.post('/upload_niubiz')
+@router.post('/upload_niubiz', dependencies=PERM_RECONCILE)
 async def upload_niubiz(file: UploadFile = File(...), db: Session = Depends(get_db)):
     file_bytes = await file.read()
     inserted, skipped = process_niubiz_file(file_bytes, db)
@@ -821,7 +837,7 @@ async def upload_niubiz(file: UploadFile = File(...), db: Session = Depends(get_
 CANCELLATION_BOOK_FILENAME_TEMPLATE = "Asiento_contable_cancelacion_{date_from}_{date_to}.xlsx"
 CANCELLATION_BOOK_EMPTY_MESSAGE = 'No hay registros pendientes de confirmar en el rango indicado'
 
-@router.get("/cancellation_book")
+@router.get("/cancellation_book", dependencies=PERM_READ)
 def generate_cancellation_book(
     request: RequestCancellationBook = Depends(),
     report_format: ReportFormat = Depends(report_format_query),
@@ -899,7 +915,7 @@ def generate_cancellation_book(
     }
 
 
-@router.post("/cancellation_book/confirm")
+@router.post("/cancellation_book/confirm", dependencies=PERM_CONFIRM)
 def confirm_cancellation_book(
     request: CancelCancellationBook,
     db: Session = Depends(get_db),
@@ -937,7 +953,7 @@ def confirm_cancellation_book(
     }
 
 
-@router.get("/cancellation_entry/folios", response_model=List[CancellationEntryFolioOut])
+@router.get("/cancellation_entry/folios", response_model=List[CancellationEntryFolioOut], dependencies=PERM_READ)
 def list_cancellation_entry_folios(
     serial_number_report: str,
     year_month: str,
@@ -961,6 +977,7 @@ def list_cancellation_entry_folios(
 @router.post(
     "/cancellation_entry/folios",
     response_model=CancellationEntryFolioOut,
+    dependencies=PERM_CONFIRM,
     status_code=status.HTTP_201_CREATED,
 )
 def register_manual_cancellation_entry_folio(
@@ -1013,7 +1030,7 @@ def register_manual_cancellation_entry_folio(
 CANCELLATION_ENTRY_FILENAME_TEMPLATE = "Asiento_contable_cancelacion_SIIGO_{date_from}_{date_to}.xlsx"
 CANCELLATION_ENTRY_EMPTY_MESSAGE = 'No hay pagos Niubiz conciliados ni pagos en efectivo en el rango indicado'
 
-@router.get("/cancellation_entry")
+@router.get("/cancellation_entry", dependencies=PERM_READ)
 def generate_cancellation_entry(
     request: RequestCancellationEntry = Depends(),
     report_format: ReportFormat = Depends(report_format_query),
@@ -1081,7 +1098,7 @@ CRUCE_DOCUMENTS_NIUBIZ_QUERY = text(_CRUCE_DOCUMENTS_NIUBIZ_SQL)
 CRUCE_DOCUMENTS_NIUBIZ_FILENAME_TEMPLATE = "Cruce_documents_niubiz_{start_date}_{end_date}.xlsx"
 CRUCE_DOCUMENTS_NIUBIZ_EMPTY_MESSAGE = 'No hay documentos en el rango indicado'
 
-@router.get("/cruce_documents_niubiz")
+@router.get("/cruce_documents_niubiz", dependencies=PERM_READ)
 def generate_cruce_documents_niubiz(
     dates: RequestReport = Depends(),
     report_format: ReportFormat = Depends(report_format_query),
@@ -1139,7 +1156,7 @@ def generate_cruce_documents_niubiz(
     }
 
 
-@router.post('/insert_payment_types')
+@router.post('/insert_payment_types', dependencies=PERM_SYNC)
 def insert_payment_type(db: Session = Depends(get_db)):
   i = 0
   offset = 0
@@ -1175,7 +1192,7 @@ def insert_payment_type(db: Session = Depends(get_db)):
   return result
 
 
-@router.post('/insert_payments')
+@router.post('/insert_payments', dependencies=PERM_SYNC)
 def insert_payment(requestPayment: RequestPayment, db: Session = Depends(get_db)):
 
   i = 0
@@ -1224,7 +1241,7 @@ def insert_payment(requestPayment: RequestPayment, db: Session = Depends(get_db)
   return result
 
 
-@router.post('/insert_exchanges')
+@router.post('/insert_exchanges', dependencies=PERM_SYNC)
 def insert_exchange(request: RequestExchange, db: Session = Depends(get_db)):
   exchanges = get_list_exchanges(request.year, request.month)
   for exchange in exchanges:
@@ -1254,7 +1271,7 @@ def insert_exchange(request: RequestExchange, db: Session = Depends(get_db)):
   return result
     
 
-@router.post("/extract_data")
+@router.post("/extract_data", dependencies=PERM_SYNC)
 def find_documents(requestDocument: RequestDocument, db: Session = Depends(get_db)):
   """
   Sincroniza desde Bsale los documentos emitidos entre emission_date_start y
@@ -1412,7 +1429,7 @@ def find_documents(requestDocument: RequestDocument, db: Session = Depends(get_d
 
 SALES_BOOK_FILENAME_TEMPLATE = "Libro_ventas_{start_date}_{end_date}.xlsx"
 
-@router.get("/sales_book")
+@router.get("/sales_book", dependencies=PERM_READ)
 def generate_sales_book(
   dates: RequestReport = Depends(),
   report_format: ReportFormat = Depends(report_format_query),
@@ -1487,7 +1504,7 @@ def generate_sales_book(
 
 BOOK_ENTRY_FILENAME_TEMPLATE = "Asiento_contable_{start_date}_{end_date}.xlsx"
 
-@router.get("/book_entry")
+@router.get("/book_entry", dependencies=PERM_READ)
 def generate_book_entry(
   dates: RequestReport = Depends(),
   report_format: ReportFormat = Depends(report_format_query),

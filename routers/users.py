@@ -130,12 +130,14 @@ class PermissionChecker:
     def __call__(self, user = Depends(get_current_user)) -> bool:
 
         for p in user.role.permissions:
-            if self.required_permissions == p.permission:
+            if self.required_permissions == p.permission and p.status:
                 return True
 
+        # 403 y no 401: el usuario sí está autenticado, solo le falta el
+        # permiso. Un 401 haría que el panel lo mande al login sin motivo.
         raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail='Permissions'
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"No tienes el permiso '{self.required_permissions}' para esta acción"
                 )
 
 @router.get("/me")
@@ -259,7 +261,7 @@ def update_user_as_admin(
     user_id: int,
     request: UserAdminUpdate,
     db: Session = Depends(get_db),
-    authorize: bool = Depends(PermissionChecker('users:update')),
+    authorize: bool = Depends(PermissionChecker('users:write')),
 ):
     """
     Edición de datos de cualquier usuario por un administrador (requiere el

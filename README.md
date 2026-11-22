@@ -105,6 +105,7 @@ app/
 │   └── admin.py             # Endpoints de administración
 │
 ├── queries/                 # Scripts SQL auxiliares
+│   ├── add_bills_permissions.sql  # Permisos de /bills para el rol admin
 │   ├── add_column_payment.sql
 │   ├── report.sql
 │   └── update_payments.sql
@@ -132,6 +133,19 @@ app/
 3. El JWT se firma con `SECRET_KEY` y expira a los 90 minutos; no hay endpoint de renovación. Un token vencido o inválido responde 401.
 
 La API no arranca si `SECRET_KEY` falta o tiene menos de 32 caracteres. Cambiarla invalida todas las sesiones abiertas.
+
+### Permisos
+
+Todas las rutas de `/bills` exigen el JWT y un permiso del rol del usuario. Sin JWT o con uno inválido responden 401; sin el permiso, 403.
+
+| Permiso | Endpoints de `/bills` |
+|---|---|
+| `bills:read` | `sales_book`, `book_entry`, `cancellation_book`, `cancellation_entry`, `cruce_documents_niubiz`, `GET cancellation_entry/folios` |
+| `bills:sync` | `extract_data`, `insert_payments`, `insert_payment_types`, `insert_exchanges` |
+| `bills:reconcile` | `upload_niubiz`, `matching_niubiz` |
+| `bills:confirm` | `cancellation_book/confirm`, `POST cancellation_entry/folios` |
+
+Para crear estos permisos y asignarlos al rol `admin`, ejecutar una vez `queries/add_bills_permissions.sql` (es idempotente).
 
 ## Reportes
 

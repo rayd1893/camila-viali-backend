@@ -193,7 +193,7 @@ Contabilidad recibe los archivos listos para SIIGO
 <li><code>POST /users/login</code> — autentica por <code>username</code> o <code>email</code> + password (bcrypt), devuelve un JWT (<code>access_token</code>, expira en 90 minutos).</li>
 <li><code>GET /users/me</code> — devuelve el usuario autenticado a partir del token.</li>
 <li>Todo el API además exige un header global <code>X-Token</code> (secreto compartido, <code>SECRET_TOKEN</code>) validado en <code>dependencies.verify_token</code> para <strong>todas</strong> las rutas, independientemente del JWT.</li>
-<li>Autorización fina por permiso vía <code>PermissionChecker(required_permission)</code>, que revisa si el rol del usuario autenticado tiene el permiso requerido.</li>
+<li>Autorización fina por permiso vía <code>PermissionChecker(required_permission)</code>, que revisa si el rol del usuario autenticado tiene el permiso requerido y activo (<code>permissions.status</code>). Si falta el JWT o es inválido responde 401; si falta el permiso, 403.</li>
 </ul>
 <h2 id="62-usuarios-users">6.2 Usuarios (<code>/users</code>)</h2>
 <ul>
@@ -210,7 +210,35 @@ Contabilidad recibe los archivos listos para SIIGO
 <p>Falta CRUD completo de roles (editar, eliminar, asignar/quitar permisos) y CRUD de permisos — ver sección 14 (pendientes).</p>
 </blockquote>
 <h2 id="64-documentos-pagos-y-reportes-bills">6.4 Documentos, pagos y reportes (<code>/bills</code>)</h2>
-<p>Este es el módulo principal del sistema. Endpoints actuales:</p>
+<p>Este es el módulo principal del sistema. Todas sus rutas exigen JWT (<code>Authorization: Bearer</code>) además del <code>X-Token</code>, y cada una pide un permiso según el tipo de operación:</p>
+<table>
+<thead>
+<tr>
+<th>Permiso</th>
+<th>Endpoints de <code>/bills</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bills:read</code></td>
+<td><code>sales_book</code>, <code>book_entry</code>, <code>cancellation_book</code>, <code>cancellation_entry</code>, <code>cruce_documents_niubiz</code>, <code>GET cancellation_entry/folios</code></td>
+</tr>
+<tr>
+<td><code>bills:sync</code></td>
+<td><code>extract_data</code>, <code>insert_payments</code>, <code>insert_payment_types</code>, <code>insert_exchanges</code></td>
+</tr>
+<tr>
+<td><code>bills:reconcile</code></td>
+<td><code>upload_niubiz</code>, <code>matching_niubiz</code></td>
+</tr>
+<tr>
+<td><code>bills:confirm</code></td>
+<td><code>cancellation_book/confirm</code>, <code>POST cancellation_entry/folios</code></td>
+</tr>
+</tbody>
+</table>
+<p>Los permisos se crean y se asignan al rol <code>admin</code> con <code>queries/add_bills_permissions.sql</code>.</p>
+<p>Endpoints actuales:</p>
 <table>
 <thead>
 <tr>
@@ -435,7 +463,6 @@ Breakdown
 </ul>
 <p>Pendiente / a reforzar antes de exponer un panel web:</p>
 <ul>
-<li>Aplicar <code>PermissionChecker</code> de forma consistente en <strong>todos</strong> los endpoints de <code>bills.py</code> (hoy no todos lo usan).</li>
 <li>Rate limiting en <code>/users/login</code>.</li>
 <li>No commitear archivos generados con datos reales (Excel/CSV de reportes) — ver sección 14.</li>
 </ul>
@@ -630,7 +657,7 @@ Breakdown
 <li><code>GET /users/{username}</code> es un stub sin implementar.</li>
 <li>~~Clave de firma JWT hardcodeada (<code>'secret'</code>)~~ — resuelto: se firma con <code>SECRET_KEY</code> del entorno.</li>
 <li>Sin tests automatizados.</li>
-<li><code>PermissionChecker</code> no aplicado de forma uniforme en todos los endpoints sensibles de <code>bills.py</code>.</li>
+<li>~~<code>PermissionChecker</code> no aplicado de forma uniforme en <code>bills.py</code>~~ — resuelto: JWT + permiso en todas las rutas de <code>/bills</code> (ver 6.4).</li>
 <li>No existe endpoint para editar/eliminar documentos, pagos o configuraciones (clients, centers, subcenters, taxes) desde la API — hoy se insertan solo vía sincronización con Bsale.</li>
 <li><code>X-Token</code> global: un SPA tendría que incluirlo en el bundle, donde es público. Decidir antes del frontend si se elimina (confiando en JWT + permisos) o si se mantiene solo entre servidores.</li>
 </ol>
@@ -648,7 +675,7 @@ Breakdown
 <li>CRUD completo de usuarios (editar, activar/desactivar).</li>
 <li>CRUD completo de roles y gestión de permisos (asignar/quitar).</li>
 <li>Endpoints de consulta paginada para documents, payments, operaciones_niubiz (hoy los reportes solo devuelven Excel/objetos completos, no hay listados paginados pensados para UI).</li>
-<li>Aplicar <code>PermissionChecker</code> en todos los endpoints de <code>bills.py</code>.</li>
+<li>~~Aplicar <code>PermissionChecker</code> en todos los endpoints de <code>bills.py</code>~~ (hecho).</li>
 </ol>
 <h2 id="bloque-3-frontend-base-del-proyecto-react-vite">BLOQUE 3 — Frontend: base del proyecto React + Vite</h2>
 <ol>
